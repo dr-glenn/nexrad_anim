@@ -16,7 +16,7 @@
 GIF_FORMAT='GIF-PIL'    # You must install Pillow, not PIL for Python 2.7
 #GIF_FORMAT='GIF-FI'    # FreeImage does not write correct anim GIF in Python 2.7
 RADAR_STATION='MUX'     # Mt. Umunhum, Los Gatos, CA
-ANIM_OUT='radar_anim.gif'
+ANIM_FILE_OUT='radar_anim.gif'
 
 import os
 import numpy as np
@@ -24,7 +24,8 @@ import datetime as dt
 import requests
 #from BeautifulSoup import BeautifulSoup as bs
 import imageio
-# Run once only:
+# Run once only if you use 'GIF-FI' (does not generate correct anim-gif with Python 2.7)
+# NOTE: better to do it from cmd shell
 #imageio.plugins.freeimage.download()
 
 try:    # Python 2.7
@@ -32,25 +33,10 @@ try:    # Python 2.7
 except: # Python 3.x
     from urllib.request import urlopen,Request
 
-# Fetch current GIF list from NOAA RIDGE system
-# Images are 600x550 8 bit GIF
-rad_station = 'mux'
-img_root_url = 'https://radar.weather.gov/ridge/RadarImg/N0R/'
-img_dir_url = img_root_url + rad_station.upper()
 try:    # Python 2.7
     from HTMLParser import HTMLParser
 except: # Python 3.x
     from html.parser import HTMLParser
-
-def createAnimGIF(images):
-    '''
-    With a list of GIF images, create animated GIF.
-    :param images: list of numpy-based objects, each a GIF image
-    '''
-    print("createAnimGIF: images=%d" %len(images))
-    im = images[0]
-    imageio.mimwrite(ANIM_OUT, images, loop=0, duration=0.5, format=GIF_FORMAT)
-
 
 # to use HTMLParser I need to implement my own class?
 class MyHTMLParser(HTMLParser):
@@ -84,76 +70,176 @@ class MyHTMLParser(HTMLParser):
     def handle_data(self, data):
         #rint "Data     :", data
         pass
+        
+    def get_img_list(self):
+        '''
+        After HTML parsing is done, we have a list of radar images for the station.
+        :return: list of GIF files from NWS.
+        '''
+        return self.images
 
-hparse = MyHTMLParser(RADAR_STATION) 
-r = requests.get(img_dir_url)
-hparse.feed(r.text)
+class RadarAnimator:
+    global GIF_FORMAT
+    img_root_url = 'https://radar.weather.gov/ridge/RadarImg/N0R/'
+    def __init__(self, station, twindow=70):
+        self.station = station.upper()
+        self.img_dir_url = self.img_root_url + self.station.upper()
+        self.twindow = twindow
+        self.start_time = -1
+        self.end_time = -1
+        self.img_tuples = []
+        self.gif_format = GIF_FORMAT
+        
+    def fetch_gifs(self):
+        img_tuples = self.get_img_tuples()
+        self.calc_time_bounds(img_tuples)
+        self.img_tuples = self.filter_img_tuples(img_tuples)
+        img_gifs = self.fetch_img_gifs(self.img_tuples) # fetches GIFs as a list of numpy arrays
+        return img_gifs
+            
+    def img_name_tuple(self, imgfile):
+        '''
+        Convert GIF image name to tuple with (datetime,str(datetime),image_name)
+        :param imgfile: a filename from NWS radar.
+        '''
+        img_parse = imgfile.split('_')
+        station = img_parse[0]
+        img_date = img_parse[1]
+        img_time = img_parse[2]
+        #print img_date,img_time
+        year = int(img_date[0:4])
+        month = int(img_date[4:6])
+        day = int(img_date[6:8])
+        hour = int(img_time[0:2])
+        minute = int(img_time[2:4])
+        # TODO: what about timezone?
+        dtobj = dt.datetime(year,month,day,hour,minute)
+        dtstr = dtobj.strftime('%Y-%m-%d %H:%M')
+        return (dtobj,dtstr,imgfile)
 
-# List of images is sorted with most recent at end
-print('Found images: %d' %(len(hparse.images)))
-print(str(hparse.images))
-
-# Convert entire list to tuples with (datetime,str(datetime),image_name)
-def img_name_tuple(imgfile):
-    img_parse = imgfile.split('_')
-    station = img_parse[0]
-    img_date = img_parse[1]
-    img_time = img_parse[2]
-    #print img_date,img_time
-    year = int(img_date[0:4])
-    month = int(img_date[4:6])
-    day = int(img_date[6:8])
-    hour = int(img_time[0:2])
-    minute = int(img_time[2:4])
-    # TODO: what about timezone?
-    dtobj = dt.datetime(year,month,day,hour,minute)
-    dtstr = dtobj.strftime('%Y-%m-%d %H:%M')
-    return (dtobj,dtstr,imgfile)
-
-twindow = 70   # Use only last minutes of images
-tdelta = dt.timedelta(minutes=twindow)
-imgs = []
-# Process all the images returned by HTML
-for img in hparse.images:
-    img_tup = img_name_tuple(img)
-    #print(img_tup[1])
-    imgs.append(img_tup)
-
-# Filter imgs to only include twindow images    
-end_time = imgs[-1][0]
-start_time = end_time - tdelta
-print('end_time = %s, start = %s' %(end_time.strftime('%Y-%m-%d %H:%M'),start_time.strftime('%Y-%m-%d %H:%M')))
-
-imgs1 = [a for a in imgs if a[0] >= start_time and a[0] <= end_time]
-
-def getImages(image_list):
-    # read from URL and store images
-    global img_dir_url, GIF_FORMAT
-    ims_gif = []
-    if True:    # use imageio to read
-        for f in image_list:
-            url = img_dir_url + '/' + f[2]
-            print('fetch: '+url)
-            if True:
+    def fetch_img_gifs(self, image_list):
+        # read from URL and store images
+        ims_gif = []
+        if True:    # use imageio to read
+            for f in image_list:
+                url = self.img_dir_url + '/' + f[2]
+                print('fetch: '+url)
                 # reading from HTTP stream does not allow seek (which Pillow uses)
-                img = imageio.imread(imageio.core.urlopen(url).read(), format=GIF_FORMAT)   # it's a numpy array
-            else:   # this will attempt to 'seek' and probably fail
-                img = imageio.imread(url, format=GIF_FORMAT)   # it's a numpy array
-            ims_gif.append(img)     
-    else:   # use Request and Image classes
-        for f in image_list:
-            url = img_dir_url + '/' + f[2]
-            print(url)
-            request = Request(url)
-            pic = urlopen(request)
-            pil_im = Image.open(pic)
-            if True:
-                new_im = Image.new("RGBA", pil_im.size)
-                new_im.paste(pil_im)
-                ims_gif.append(new_im)
-            else:
-                ims_gif.append(pil_im)
-    return ims_gif
+                img = imageio.imread(imageio.core.urlopen(url).read(), format=self.gif_format)   # it's a numpy array
+                ims_gif.append(img)     
+        else:   # use Request and Image classes
+            for f in image_list:
+                url = self.img_dir_url + '/' + f[2]
+                print(url)
+                request = Request(url)
+                pic = urlopen(request)
+                pil_im = Image.open(pic)
+                if True:
+                    new_im = Image.new("RGBA", pil_im.size)
+                    new_im.paste(pil_im)
+                    ims_gif.append(new_im)
+                else:
+                    ims_gif.append(pil_im)
+        return ims_gif
 
-ims_gif = getImages(imgs1)
-createAnimGIF(ims_gif)
+    def calc_time_bounds(self, img_tuples):
+        '''
+        :param img_tuples: list of image names from NWS.
+        :param twindow: time window in minutes. They only guarantee one hour of history.
+        :return: tuple of start and end times
+        '''
+        tdelta = dt.timedelta(minutes=self.twindow)
+        self.end_time = img_tuples[-1][0]  # the time of most recent image
+        self.start_time = self.end_time - tdelta
+        return (self.start_time, self.end_time)
+
+    def get_time_bounds(self):
+        '''
+        :param img_tuples: list of image names from NWS.
+        :param twindow: time window in minutes. They only guarantee one hour of history.
+        :return: tuple of start and end times
+        '''
+        return (self.start_time, self.end_time)
+        
+    def get_nws_img_list(self):
+        '''
+        Fetch current GIF list from NOAA RIDGE system.
+        Images are 600x550 8 bit GIF.
+        Generally we get 1 to three hours, images every 10 minutes.
+        :param station: radar station name from NWS.
+        :return: list of GIF filenames available.
+        '''
+        hparse = MyHTMLParser(self.station) 
+        r = requests.get(self.img_dir_url)
+        hparse.feed(r.text)
+        img_list = hparse.get_img_list()
+        return img_list
+        
+    def make_img_tuples(self, img_list):
+        img_tuples = []
+        # Generate list of all images returned by HTML. It may go back a few hours.
+        for img in img_list:
+            img_tup = self.img_name_tuple(img)
+            #print(img_tup[1])
+            img_tuples.append(img_tup)
+        return img_tuples
+    
+    def get_img_tuples(self):
+        # Fetch current GIF list from NOAA RIDGE system
+        # Images are 600x550 8 bit GIF
+        img_list = self.get_nws_img_list()
+
+        # List of images is sorted with most recent at end
+        print('Found images: %d' %(len(img_list)))
+        print(str(img_list))
+        
+        img_tuples = self.make_img_tuples(img_list)
+        return img_tuples
+        
+    def filter_img_tuples(self, img_tuples):
+        imgs = [a for a in img_tuples if a[0] >= self.start_time and a[0] <= self.end_time]
+        return imgs
+        
+    def create_anim_gif(self, anim_out, img_gifs):
+        '''
+        :param img_dir_url: NWS for the radar GIFs
+        :param img_tuples: list of tuples that specify the GIF filenames.
+        :param anim_out: either a GIF filename or imageio.RETURN_BYTES.
+        :return: None (if writing file) or byte array
+        '''
+        #print("createAnimGIF: images=%d" %len(img_tuples))
+        return imageio.mimwrite(anim_out, img_gifs, loop=0, duration=0.5, format=self.gif_format)
+
+    def get_img_dir_url(self):
+        return self.img_dir_url
+    
+def main2(station=RADAR_STATION, gif_out=ANIM_FILE_OUT):
+    print('fetch station=%s'%(station))
+    rad_anim = RadarAnimator(station)
+    img_dir_url = rad_anim.get_img_dir_url()
+    img_gifs = rad_anim.fetch_gifs()
+    start_time,end_time = rad_anim.get_time_bounds()
+    print('end_time = %s, start = %s' %(end_time.strftime('%Y-%m-%d %H:%M'),start_time.strftime('%Y-%m-%d %H:%M')))
+    return rad_anim.create_anim_gif(gif_out, img_gifs)
+
+if __name__== "__main__":
+    import sys
+    import getopt
+    cmdArgs = sys.argv
+    print('argv: '+str(cmdArgs))
+    argsList = cmdArgs[1:]  # '0' is the program name itself
+    shortOpts = 'hs:o:'
+    longOpts  = ['help', 'station=', 'out=']
+    try:
+        args,values = getopt.getopt(argsList, shortOpts, longOpts)
+    except getopt.error as err:
+        print('ERROR unknown arg: '+str(err))
+        sys.exit(2)
+    station = RADAR_STATION
+    for arg,val in args:
+        print('arg=%s, value=%s' %(arg,val))
+        if arg in ('-s','--station'):
+            station = val
+        
+    main2(station=station)
+    
