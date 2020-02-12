@@ -9,7 +9,8 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 import signal
 import qtradar as radar
-import imageio         
+import imageio
+import datetime as dt
 RADAR_SCALE = True  # if radar GIF needs to be scaled to fit in display window
 
 # scaling of QMovie can be dynamically accomplished: https://stackoverflow.com/questions/50162090/pyqt-resize-qmovie-with-proper-anti-aliasing
@@ -54,9 +55,25 @@ class Ui_MainWindow(object):
         self.radarTitle.setFrameShape(QtWidgets.QFrame.Box)
         self.radarTitle.setLineWidth(2)
         self.radarTitle.setObjectName("radarTitle")
-        self.textBrowser = QtWidgets.QTextBrowser(self.centralwidget)
-        self.textBrowser.setGeometry(QtCore.QRect(330, 100, 231, 192))
-        self.textBrowser.setObjectName("textBrowser")
+
+        self.textBox = QtWidgets.QTextEdit(self.centralwidget)
+        self.textBox.setGeometry(QtCore.QRect(330, 100, 231, 192))
+        self.textBox.setObjectName("textBrowser")
+        self.textBox.setFrameShape(QtWidgets.QFrame.Box)
+        self.textBox.setLineWidth(2)
+        '''
+        # add a QScrollArea to QLabel
+        self.textBox = QtWidgets.QLabel(self.centralwidget)
+        self.textBox.setGeometry(QtCore.QRect(330, 100, 231, 192))
+        self.textBox.setObjectName("textBox")
+        self.textBox.setFrameShape(QtWidgets.QFrame.Box)
+        self.textBox.setLineWidth(2)
+        if False:
+            self.scrollArea = QtWidgets.QScrollArea()
+            self.scrollArea.setBackgroundRole(QtGui.QPalette.Dark)
+            self.scrollArea.setWidget(self.textBox)
+        '''
+
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 800, 21))
@@ -105,7 +122,7 @@ class Ui_MainWindow(object):
             movie.setScaledSize(size)
         self.mov.start()
         '''
-    def closeEvent(self):
+    def closeEvent(self,event):
         myquit()
         
 def tick():
@@ -123,6 +140,17 @@ def tick():
                 movie.setScaledSize(size)
             mov.start()
 
+def tick1m():
+    global ui
+    global program_min_count, prog_dt
+    program_min_count += 1
+    prog_dt = dt.datetime.now()
+    #ui.textBox.setText('minute = %d' %(program_min_count))
+    ui.textBox.append('date = %s' %str(prog_dt))
+
+def tick10m():
+    pass
+    
 def qtstart():
     print('qtstart:')
     
@@ -144,17 +172,31 @@ def realquit():
 if __name__ == "__main__":
     import sys
     global ui
+    global program_min_count
+    global prog_dt
+    program_min_count = 0
+    prog_dt = dt.datetime.now()
     app = QtWidgets.QApplication(sys.argv)
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow)
+    ui.textBox.setText('date = %s' %str(prog_dt))
 
     stimer = QtCore.QTimer()
     stimer.singleShot(10, qtstart)
+    
     # Clock timer. Whenever the timer runs out, call 'tick' function
     ctimer = QtCore.QTimer()
     ctimer.timeout.connect(tick)
     ctimer.start(1000)  # 1000 ms
+    
+    ctimer1m = QtCore.QTimer()
+    ctimer1m.timeout.connect(tick1m)
+    ctimer1m.start(60*1000)  # 1000 ms
+    
+    ctimer10m = QtCore.QTimer()
+    ctimer10m.timeout.connect(tick10m)
+    ctimer10m.start(60*10*1000)  # 1000 ms
 
     signal.signal(signal.SIGINT, myquit)
     

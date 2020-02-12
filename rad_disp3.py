@@ -85,7 +85,7 @@ class Ui_MainWindow(object):
         # using QByteArray to init QMovie: https://stackoverflow.com/questions/30895402/loading-animated-gif-data-in-qmovie
         if True:
             # Using a byte buffer for GIF
-            self.giffy = radar.main2(station=station, gif_out=imageio.RETURN_BYTES)
+            self.giffy = radar.main(station=station, gif_out=imageio.RETURN_BYTES)
             print('giffy=%d' %(len(self.giffy)))
             self.byteArray = QtCore.QByteArray(self.giffy)
             self.gif_bytes = QtCore.QBuffer(self.byteArray) # parent class is QIODevice
@@ -94,7 +94,7 @@ class Ui_MainWindow(object):
             self.mov = QtGui.QMovie(self.gif_bytes, b"gif")
         else:
             # Using a file for GIF
-            radar.main2(station=station, gif_out=radar.ANIM_FILE_OUT)
+            radar.main(station=station, gif_out=radar.ANIM_FILE_OUT)
             self.mov = QtGui.QMovie(radar.ANIM_FILE_OUT)
             #self.mov.setCacheMode(QtGui.QMovie.CacheAll)
         self.radarMovie.setMovie(self.mov)

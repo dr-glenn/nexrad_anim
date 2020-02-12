@@ -1,15 +1,20 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# This application fetches weather radar GIF images and constructs an animation.
-# NOAA generates images from all US radar stations every few minutes; delta is between 3 to 6 minutes.
-# The images are only guaranteed to be saved for one hour.
-# Documentation of this NOAA service: https://www.weather.gov/jetstream/ridge_download
-# Index of the recent files from station MUX (Mt. Umunhum, Silicon Valley radar): https://radar.weather.gov/ridge/RadarImg/N0R/MUX/
-# NOAA web page for current radar displayed with overlays: https://radar.weather.gov/ridge/radar.php?rid=mux&product=N0R&overlay=11101111&loop=no
-# You can also fetch NEXRAD raw data from AWS servers. This data goes back to 1992!
-# NEXRAD RAW needs to be processed to generate images. In Python I have found that it takes tens of seconds
-# to fetch the data and process it into images on my desktop system: this will never work on a Raspberry Pi.
+'''
+Uses Python3 'requests' package. Does not run asynchronously, so should not be used
+in a GUI application. See qtradar.py for a version that runs async using PyQt5 API.
+
+This module fetches weather radar GIF images and constructs an animation.
+NOAA generates images from all US radar stations every few minutes; delta is between 3 to 6 minutes.
+The images are only guaranteed to be saved for one hour.
+Documentation of this NOAA service: https://www.weather.gov/jetstream/ridge_download
+Index of the recent files from station MUX (Mt. Umunhum, Silicon Valley radar): https://radar.weather.gov/ridge/RadarImg/N0R/MUX/
+NOAA web page for current radar displayed with overlays: https://radar.weather.gov/ridge/radar.php?rid=mux&product=N0R&overlay=11101111&loop=no
+You can also fetch NEXRAD raw data from AWS servers. This data goes back to 1992!
+NEXRAD RAW needs to be processed to generate images. In Python I have found that it takes tens of seconds
+to fetch the data and process it into images on my desktop system: this will never work on a Raspberry Pi.
+'''
 
 # Runs in Python 2.7. If you run in 3.6, it will import different packages.
 
@@ -213,7 +218,7 @@ class RadarAnimator:
     def get_img_dir_url(self):
         return self.img_dir_url
     
-def main2(station=RADAR_STATION, gif_out=ANIM_FILE_OUT):
+def main(station=RADAR_STATION, gif_out=ANIM_FILE_OUT):
     print('fetch station=%s'%(station))
     rad_anim = RadarAnimator(station)
     img_dir_url = rad_anim.get_img_dir_url()
@@ -241,5 +246,5 @@ if __name__== "__main__":
         if arg in ('-s','--station'):
             station = val
         
-    main2(station=station)
+    main(station=station)
     
