@@ -2,7 +2,7 @@
 # coding: utf-8
 
 '''
-Uses PyQt5 APIs for asynchronous HTTP operations.
+Uses Python 3.x. Run as cron job to build new radar animated GIF every 10 or 15 minutes.
 
 This module fetches weather radar GIF images and constructs an animation.
 NOAA generates images from all US radar stations every few minutes; delta is between 3 to 6 minutes.
@@ -29,18 +29,15 @@ import imageio
 # NOTE: better to do it from cmd shell
 #imageio.plugins.freeimage.download()
 import time
+from array2gif import write_gif
 
-from PyQt5 import QtCore, QtGui, QtNetwork, QtWidgets
+from urllib.request import urlopen,Request
+from html.parser import HTMLParser
 
-try:    # Python 2.7
-    from urllib2 import urlopen,Request
-except: # Python 3.x
-    from urllib.request import urlopen,Request
-
-try:    # Python 2.7
-    from HTMLParser import HTMLParser
-except: # Python 3.x
-    from html.parser import HTMLParser
+import logging
+import my_logger
+logger = my_logger.setup_logger(__name__,'pyradar.log', level=logging.DEBUG)
+logger.debug('start')
 
 # to use HTMLParser I need to implement my own class?
 class MyHTMLParser(HTMLParser):
@@ -96,14 +93,12 @@ class RadarAnimator:
         self.end_time = -1
         self.img_tuples = []
         self.gif_format = GIF_FORMAT
-        self.nam = QtNetwork.QNetworkAccessManager()
         self.img_list = []
         self.img_tuples = []
         self.img_gifs = []
         self.start_img_list = False
         self.has_img_list = False
         self.has_img_tuples = False
-        #self.has_img_gifs = False
         self.start_img_gifs = False
         self.has_img_gifs = False
         self.start_create_movie = False
@@ -112,20 +107,21 @@ class RadarAnimator:
     def generate_movie(self):
         '''
         State machine to create a new radar animated GIF.
+        Only gets used if running in threaded process.
         You will want to call this from main app event loop, e.g., a time tick.
         '''
         retval = None
         if self.start_img_list == False:
-            print('generate_movie: call get_img_tuples')
+            logger.debug('generate_movie: call get_img_tuples')
             self.start_img_list = True
             self.get_img_tuples()
         elif self.has_img_list == True:
             if self.start_img_gifs == False:
                 # Now get the GIFs
-                print('generate_movie: fetch_gifs')
+                logger.debug('generate_movie: fetch_gifs')
                 self.fetch_all_gifs()
             elif self.has_img_gifs == True and self.start_create_movie == False:
-                print('tick: construct movie')
+                logger.debug('tick: construct movie')
                 self.start_create_movie = True
                 mov = self.create_qmovie()
                 retval = mov
@@ -133,30 +129,31 @@ class RadarAnimator:
         return retval
         
     def fetch_gifs(self):
-        img_tuples = self.get_img_tuples()
-        print('fetch_gifs: img_tuples={}'.format(str(img_tuples)))
-        if False:
-            self.calc_time_bounds(img_tuples)
-            self.img_tuples = self.filter_img_tuples(img_tuples)
-            img_gifs = self.fetch_img_gifs(self.img_tuples) # fetches GIFs as a list of numpy arrays
-            return img_gifs
+        self.get_img_tuples()   # reads img filenames from NWS website and builds tuples with useful info
+        logger.debug('fetch_gifs: img_tuples={}'.format(str(self.img_tuples)))
+        self.calc_time_bounds(self.img_tuples)
+        self.img_tuples = self.filter_img_tuples(self.img_tuples)
+        self.img_gifs = self.fetch_img_gifs(self.img_tuples) # fetches GIFs as a list of numpy arrays
+        logger.debug('fetch_gifs: len=%d' %(len(self.img_gifs)))
+        return self.img_gifs
             
     def img_name_tuple(self, imgfile):
         '''
         Convert GIF image name to tuple with (datetime,str(datetime),image_name)
+        Filenames look like: MUX_20201214_2339_N0R.gif
         :param imgfile: a filename from NWS radar.
+        :return: tuple (datetime, datetime-string, image_filename)
         '''
         img_parse = imgfile.split('_')
         station = img_parse[0]
         img_date = img_parse[1]
         img_time = img_parse[2]
-        #print img_date,img_time
         year = int(img_date[0:4])
         month = int(img_date[4:6])
         day = int(img_date[6:8])
         hour = int(img_time[0:2])
         minute = int(img_time[2:4])
-        # TODO: what about timezone?
+        # TODO: what about timezone? I think the datetime is in timezone of the radar station.
         dtobj = dt.datetime(year,month,day,hour,minute)
         dtstr = dtobj.strftime('%Y-%m-%d %H:%M')
         return (dtobj,dtstr,imgfile)
@@ -173,6 +170,10 @@ class RadarAnimator:
     * Method to generate QMovie sets a flag and fires a one-shot to return in 10 minutes for update.
     '''
     def fetch_all_gifs(self):
+        """
+        Only called by state machine, so not used now.
+        :return:
+        """
         # use self.img_list
         self.img_gifs = []
         self.img_idx = 0
@@ -180,20 +181,24 @@ class RadarAnimator:
         self.get_one_gif()
        
     def get_one_gif(self):
-        # make QNetworkRequest for one image
+        # only called from state machine?
         fimg = self.img_tuples[self.img_idx]
         self.img_url = self.img_dir_url + '/' + fimg[2]
-        print('get_one_gif: '+self.img_url)
+        logger.debug('get_one_gif: '+self.img_url)
         '''
         # reading from HTTP stream does not allow seek (which Pillow uses)
         img = imageio.imread(imageio.core.urlopen(url).read(), format=self.gif_format)   # it's a numpy array
-        '''
         # connection request
         req = QtNetwork.QNetworkRequest(QtCore.QUrl(self.img_url))
         self.reply = self.nam.get(req)
         self.reply.finished.connect(self.got_one_gif)
-        
+        '''
+
     def got_one_gif(self):
+        '''
+        Only called by firing event from get_on_gif, so not used?
+        :return:
+        '''
         # store in list, signal that next should be fetched
         # read reply, store to self.img_gifs
         er = self.reply.error()
@@ -218,28 +223,28 @@ class RadarAnimator:
     def got_all_gifs(self):
         # process the GIFs. Make a QMovie
         # set timer for 10 minutes to refresh the radar images
-        print('got_all_gifs')
+        logger.debug('got_all_gifs')
         self.has_img_gifs = True
         
     def fetch_img_gifs(self, image_list):
         '''
-        Create a timer
-        Fire event and request GIF
-        When GIF is returned OK, then step to next in list and fire event again
+        Fetch all images in list by requesting from URL (HTTP).
+        When imageio is used, the image is returned as a Numpy array with RGBA channels.
+        :return: list of GIFs
         '''
         # read from URL and store images
         ims_gif = []
         if True:    # use imageio to read
             for f in image_list:
                 url = self.img_dir_url + '/' + f[2]
-                print('fetch: '+url)
+                logger.debug('fetch_img_gifs: '+url)
                 # reading from HTTP stream does not allow seek (which Pillow uses)
                 img = imageio.imread(imageio.core.urlopen(url).read(), format=self.gif_format)   # it's a numpy array
                 ims_gif.append(img)     
         else:   # use Request and Image classes
             for f in image_list:
                 url = self.img_dir_url + '/' + f[2]
-                print('fetch: '+url)
+                logger.debug('fetch: '+url)
                 request = Request(url)
                 pic = urlopen(request)
                 pil_im = Image.open(pic)
@@ -264,8 +269,6 @@ class RadarAnimator:
 
     def get_time_bounds(self):
         '''
-        :param img_tuples: list of image names from NWS.
-        :param twindow: time window in minutes. They only guarantee one hour of history.
         :return: tuple of start and end times
         '''
         return (self.start_time, self.end_time)
@@ -273,50 +276,36 @@ class RadarAnimator:
     def get_nws_img_list(self):
         '''
         Fetch current GIF list from NOAA RIDGE system.
-        Images are 600x550 8 bit GIF.
+        Images are 600x550 8 bit GIF with RGBA channels.
         Generally we get 1 to three hours, images every 10 minutes.
         :param station: radar station name from NWS.
         :return: list of GIF filenames available.
         '''
-        #hparse = MyHTMLParser(self.station)
-        # TODO: can I use self.reply, or should I make a specific name
-        print('get_nws_img_list: %s' %(self.img_dir_url))
-        req = QtNetwork.QNetworkRequest(QtCore.QUrl(self.img_dir_url))
-        self.reply = self.nam.get(req)
-        self.reply.finished.connect(self.handle_img_list)
-        #self.nam.get(req)    
-        
-    def handle_img_list(self):
+        logger.debug('get_nws_img_list: %s' %(self.img_dir_url))
+        with urlopen(self.img_dir_url) as response:
+            html = response.read()
+        logger.debug('get_nws_img_list: {}'.format(str(html)))
+        self.handle_img_list(html.decode('utf-8'))
+
+    def handle_img_list(self, html):
         '''
         Process reply to img_list request.
         Sets self.img_list. If there was an error, self.img_list=None.
         '''
-        print('handle_img_list: start')
-        er = self.reply.error()
-        if er == QtNetwork.QNetworkReply.NoError:
-            hparse = MyHTMLParser(self.station)
-            sdata = self.reply.readAll()
-            #hparse.feed(data.text)
-            reply_data = str(sdata.data(),encoding='utf-8')
-            #print(reply_data)
-            hparse.feed(reply_data)
-            self.img_list = hparse.get_img_list()
-            self.has_img_list = True
-        else:
-            print("Error occured: ", er)
-            print(self.reply.errorString())
-            self.img_list = None
-            # TODO: throw exception
-            
+        logger.debug('handle_img_list: start')
+        hparse = MyHTMLParser(self.station)
+        hparse.feed(html)
+        self.img_list = hparse.get_img_list()
+        self.has_img_list = True
+
         if self.has_img_list:
-            print("img_list len=%d" %(len(self.img_list)))
+            logger.debug("img_list len=%d" %(len(self.img_list)))
             # TODO: should really go back to an event handler loop
             img_tuples = self.make_img_tuples(self.img_list)
             self.calc_time_bounds(img_tuples)
             self.img_tuples = self.filter_img_tuples(img_tuples)
-            print("img_tuples = %s" %(str(self.img_tuples)))
+            logger.debug("img_tuples = %s" %(str(self.img_tuples)))
             # fire event to ask for image GIFs
-            
     
     def make_img_tuples(self, img_list):
         img_tuples = []
@@ -330,7 +319,7 @@ class RadarAnimator:
     def get_img_tuples(self):
         # Fetch current GIF list from NOAA RIDGE system
         # Images are 600x550 8 bit GIF
-        print('get_img_tuples: start')
+        logger.debug('get_img_tuples: start')
         self.get_nws_img_list()
 
         """
@@ -343,6 +332,11 @@ class RadarAnimator:
         """
         
     def filter_img_tuples(self, img_tuples):
+        '''
+        Only keep image tuples within time bounds
+        :param img_tuples: a list of tuples
+        :return: filtered list of tuples
+        '''
         imgs = [a for a in img_tuples if a[0] >= self.start_time and a[0] <= self.end_time]
         return imgs
         
@@ -353,21 +347,28 @@ class RadarAnimator:
         :param anim_out: either a GIF filename or imageio.RETURN_BYTES.
         :return: None (if writing file) or byte array
         '''
-        #print("createAnimGIF: images=%d" %len(img_tuples))
-        new_gifs = []
-        for img in self.img_gifs:
-            new_gifs.append(imageio.imread(bytes(img),format=self.gif_format))
-            
-        return imageio.mimwrite(anim_out, new_gifs, loop=0, duration=0.5, format=self.gif_format)
-        
+        if True:
+            new_gifs = []
+            for img in self.img_gifs:
+                logger.debug('create_anim_gif: img len=%d' %(len(bytes(img))))
+                new_gifs.append(img)
+
+            return imageio.mimwrite(anim_out, new_gifs, loop=0, duration=0.5, format=self.gif_format)
+        else:
+            # self.img_gifs was read with imageio.imread, hence the GIFs are numpy arrays
+            logger.debug('create_anim_gif: array shape: {}'.format(self.img_gifs[0].shape))
+            write_gif(self.img_gifs, 'radar.gif', fps=2)
+
     def create_qmovie(self):
+        """
         self.giffy = self.create_anim_gif(imageio.RETURN_BYTES)
         print('giffy=%d' %(len(self.giffy)))
         self.byteArray = QtCore.QByteArray(self.giffy)
         self.gif_bytes = QtCore.QBuffer(self.byteArray) # parent class is QIODevice
+        """
         # oh my, the second arg has to be bytes, but it is just the format name!
         # https://stackoverflow.com/questions/51832829/qmovie-unexpected-argument-qbuffer
-        self.mov = QtGui.QMovie(self.gif_bytes, b"gif")
+        self.mov = None
         return self.mov
 
     def get_img_dir_url(self):
@@ -387,25 +388,21 @@ class RadarAnimator:
             pass
     
 def main(station=RADAR_STATION, gif_out=ANIM_FILE_OUT):
-    print('fetch station=%s'%(station))
+    logger.debug('fetch station=%s'%(station))
     rad_anim = RadarAnimator(station)
     img_dir_url = rad_anim.get_img_dir_url()
     img_gifs = rad_anim.fetch_gifs()
     # must wait until rad_anim.has_img_list == True
     #time.sleep(15)
     start_time,end_time = rad_anim.get_time_bounds()
-    print('end_time = %s, start = %s' %(end_time.strftime('%Y-%m-%d %H:%M'),start_time.strftime('%Y-%m-%d %H:%M')))
-    return rad_anim.create_anim_gif(gif_out, img_gifs)
+    logger.debug('end_time = %s, start = %s' %(end_time.strftime('%Y-%m-%d %H:%M'),start_time.strftime('%Y-%m-%d %H:%M')))
+    return rad_anim.create_anim_gif(gif_out)
 
 if __name__== "__main__":
     import sys
     import getopt
     cmdArgs = sys.argv
 
-    app = QtWidgets.QApplication(sys.argv)
-
-#    signal.signal(signal.SIGINT, myquit)
-    
     print('argv: '+str(cmdArgs))
     argsList = cmdArgs[1:]  # '0' is the program name itself
     shortOpts = 'hs:o:'
@@ -420,6 +417,5 @@ if __name__== "__main__":
         print('arg=%s, value=%s' %(arg,val))
         if arg in ('-s','--station'):
             station = val
-        
     main(station=station)
     
