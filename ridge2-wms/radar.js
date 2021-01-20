@@ -4,6 +4,10 @@ import ImageLayer from 'ol/layer/Image';
 import ImageWMS from 'ol/source/ImageWMS';
 import Map from 'ol/Map';
 import View from 'ol/View';
+import Tile from 'ol/layer';
+import TileLayer from 'ol/layer/Tile';
+import OSM from 'ol/source/OSM';
+import {transform} from 'ol/proj';	// use curly-brace to import a function
 
 var wmsSource = new ImageWMS({
   url: 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_raw/ows',
@@ -17,13 +21,19 @@ var wmsLayer = new ImageLayer({
   source: wmsSource,
 });
 
+center4326 = [-100.0,35.0];
+center3857 = transform(center4326, 'EPSG:4326', 'EPSG:3857');
+
 var view = new View({
-  center: [0, 0],
-  zoom: 1,
+  projection: 'EPSG:3857',
+  center: center3857,
+  zoom: 4,
 });
 
+layerOSM = new TileLayer({source: new OSM()});
+
 var map = new Map({
-  layers: [wmsLayer],
+  layers: [layerOSM,wmsLayer],
   target: 'map',
   view: view,
 });
