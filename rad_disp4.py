@@ -129,6 +129,7 @@ def tick():
     global ui
     #print('tick')
     if ui.start_radar:
+        ui.textBox.append("Generate new movie")
         mov = ui.radar.generate_movie()   # call the state machine
         if mov:
             # TODO: all below here should be part of Ui_MainWindow class
@@ -139,6 +140,8 @@ def tick():
                 movie = ui.radarMovie.movie() # retrieve the QMovie object
                 movie.setScaledSize(size)
             mov.start()
+        if mov:
+            ui.start_radar = False
 
 def tick1m():
     global ui
@@ -149,7 +152,10 @@ def tick1m():
     ui.textBox.append('date = %s' %str(prog_dt))
 
 def tick10m():
-    pass
+    global ui
+    ui.radar.stop()
+
+    ui.start_radar = True   # force it to reload from NOAA
     
 def qtstart():
     print('qtstart:')
