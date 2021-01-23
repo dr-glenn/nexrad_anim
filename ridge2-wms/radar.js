@@ -9,6 +9,8 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import {transform} from 'ol/proj';	// use curly-brace to import a function
 
+/*
+*/
 var wmsSource = new ImageWMS({
   url: 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_raw/ows',
   params: {'service': 'WMS', 'version':'1.3.0', 'request':'GetMap','layers':'conus_bref_raw','style':'','crs':'EPSG:3857',
@@ -36,33 +38,4 @@ var map = new Map({
   layers: [layerOSM,wmsLayer],
   target: 'map',
   view: view,
-});
-
-map.on('singleclick', function (evt) {
-  document.getElementById('info').innerHTML = '';
-  var viewResolution = /** @type {number} */ (view.getResolution());
-  var url = wmsSource.getFeatureInfoUrl(
-    evt.coordinate,
-    viewResolution,
-    'EPSG:3857',
-    {'INFO_FORMAT': 'text/html'}
-  );
-  if (url) {
-    fetch(url)
-      .then(function (response) { return response.text(); })
-      .then(function (html) {
-        document.getElementById('info').innerHTML = html;
-      });
-  }
-});
-
-map.on('pointermove', function (evt) {
-  if (evt.dragging) {
-    return;
-  }
-  var pixel = map.getEventPixel(evt.originalEvent);
-  var hit = map.forEachLayerAtPixel(pixel, function () {
-    return true;
-  });
-  map.getTargetElement().style.cursor = hit ? 'pointer' : '';
 });
