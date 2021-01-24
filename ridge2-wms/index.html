@@ -15,7 +15,11 @@
   <body>
 	<h1>OpenLayers Radar</h1>
     <div id="map" class="map"></div>
-    <div id="info">&nbsp;</div>
+    <div role="group" aria-label="Animation controls">
+      <button id="play" type="button">Play</button>
+      <button id="pause" type="button">Pause</button>
+      <span id="info"></span>
+    </div>
     <script src="radar_kmux.js"></script>
   </body>
 </html>
