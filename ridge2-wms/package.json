@@ -1,5 +1,5 @@
 {
-  "name": "getfeatureinfo-image",
+  "name": "radar-ridge2",
   "dependencies": {
     "elm-pep": "^1.0.6",
     "ol": "6.5.0"
@@ -8,7 +8,7 @@
     "parcel": "^2.0.0-nightly.540"
   },
   "scripts": {
-    "start": "parcel index.html",
-    "build": "parcel build --public-url . index.html"
+    "start": "parcel radar.html",
+    "build": "parcel build --public-url . radar.html"
   }
 }
