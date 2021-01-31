@@ -2,20 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
+	<meta http-equiv="refresh" content="600">
     <title>Radar WMS</title>
-    <!-- Pointer events polyfill for old browsers, see https://caniuse.com/#feat=pointer -->
-    <script src="https://unpkg.com/elm-pep"></script>
+
     <style>
       .map {
-        width: 100%;
-        height:400px;
+        width: 60%;
+        height:300px;
       }
     </style>
   </head>
   <body>
-	<h1>OpenLayers example</h1>
+	<h2>NWS Weather Radar</h2>
     <div id="map" class="map"></div>
-    <div id="info">&nbsp;</div>
-    <script src="radar.js"></script>
+    <div role="group" aria-label="Animation controls">
+      <button id="play" type="button">Play</button>
+      <button id="pause" type="button">Pause</button>
+      <span id="info"></span>
+    </div>
+	  <img id="legend" alt="legend goes here" width="500" height="40">
+	  <script src="radar_site.js"></script>
   </body>
 </html>
