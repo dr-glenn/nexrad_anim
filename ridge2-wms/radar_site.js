@@ -77,87 +77,46 @@ var iconLayer = new VectorLayer({
 	})
 });
 
-// This function is not used; unusure how to use WMSCapabilities.
-function getCapabilitiesUnused() {
-	var url = 'https://opengeo.ncep.noaa.gov/geoserver/'+radarSite+'/ows';
-	var wmsCap = new WMSCapabilities({
-		url: url,
-		params: {'service': 'WMS', 'version':'1.3.0', 'request':'GetCapabilities' }
-	});
-	//var wmsCap = new WMSCapabilities().parse();
-	// wmsCap is a string representing XML. Convert to object.
+// wmsCap is a string representing XML. Use DOMparser and access the nodes.
+function processXmlCapabilities(wmsCap) {
 	var domParser = new DOMParser();
-	var xmlCap = domParser.parseFromString(wmsCap, "text/xml");
-	console.log('wmsCap length = '+wmsCap.length);
-	return xmlCap;
+	xmlCap = domParser.parseFromString(wmsCap, "text/xml");
+	dtArray = processCapabilities(xmlCap);
+	return dtArray;
 }
-/*
-function getMarkerLayer() {
-	// Create or replace map marker, if required
-	if (mapMarker) {
-		// Create map marker icon (Reference: ol.style.Icon)
-		markerIcon = new Icon({
-			anchor: markerAnchor,
-			anchorXUnits: markerAnchorXUnits,
-			anchorYUnits: markerAnchorYUnits,
-			src: redDotSource
-		})
 
-		// Create style for vector layer (Reference: ol.style.Style)
-		mapMarkerStyle = new Style({
-			 image: markerIcon
-		})
+// wmsCap is a string representing XML. Use WMSCapabilities to access the nodes as properties of an Object.
+function processWmsCapabilities(wmsCap) {
+	// Create 'result' object corresponding to XML returned from GetCapabilities
+	var parser = new WMSCapabilities();
+	var result = parser.read(wmsCap);
+	if(!result) throw new Error('Error parsing WMS Capabilites XML');
+	// Get Layer coresponding to radar site/product
+	// In XML parlance, find a Layer node with child node Name with value radarSiteProd
+	var layer = result.Capability.Layer.Layer.find( Layer => { return Layer.Name === radarSiteProd } )
+	if (!layer) throw new Error('Layer for '+radarSiteProd+' not found');
 
-		// Create map marker point (Reference: ol.geom.Point, ol.proj.fromLonLat)
-		var marker3857 = fromLonLat(homeLoc);
-		mapMarkerPoint = new Point(marker3857);
-
-		// Create map marker feature (Reference: ol.Feature)
-		mapMarkerFeature = new Feature({
-			geometry: mapMarkerPoint,
- 			name: 'HOME',
-		});
-
-		// Create source of features for vector layer (Reference: ol.source.Vector)
-		mapMarkerFeatureSource = new VectorSource({
-			features: [mapMarkerFeature]
-		})
-
-		// Create or update vector layer (Reference: ol.layer.Vector)
-		if (true) {
-			// Create mapLayerMarker
-			mapLayerMarker = new VectorLayer({
-				source: mapMarkerFeatureSource,
-				style: mapMarkerStyle
-			})
-		}
-		else {
-			// Update mapLayerMarker
-			mapLayerMarker.setSource(mapMarkerFeatureSource);
-			mapLayerMarker.setStyle(mapMarkerStyle);
-		}
-		console.log('getMarkerLayer finished');
-		return mapLayerMarker;
-	}
-	return null;
+	// Get bounding box
+	var boundingBox = layer.BoundingBox.find( BoundingBox => { return BoundingBox.crs === 'CRS:84' } );
+	if (!boundingBox) throw new Error('BoundingBox not found');
 }
-*/
+
 // Function to issue GetCapabiliteis to the server and obtain and process required information.
 function getCapabilities() {
 	var url = 'https://opengeo.ncep.noaa.gov/geoserver/'+radarSite+'/ows?service=wms&version=1.3.0&request=GetCapabilities';
 	var xhttp = new XMLHttpRequest();
-	console.log('getCap: start');
+	console.log('getCapabilities: start');
 	xhttp.onreadystatechange = function() {
 		if (this.readyState != 4) {
-			console.log('getCap readyState = '+this.readyState);
+			console.log('getCapabilities readyState = '+this.readyState);
 			return;
 		}
 		else if (this.status == 200) {
 		   // Typical action to be performed when the document is ready:
 		   //document.getElementById("demo").innerHTML = xhttp.responseText;
-		   console.log('getCap length = '+xhttp.responseText.length);
-		   wmsCap = xhttp.responseText;
-			// wmsCap is a string representing XML. Convert to object.
+		   console.log('getCapabilities length = '+xhttp.responseText.length);
+            // wmsCap is a string representing XML. Convert to object.
+		    wmsCap = xhttp.responseText;
 			var domParser = new DOMParser();
 			xmlCap = domParser.parseFromString(wmsCap, "text/xml");
 			dtArray = processCapabilities(xmlCap);
@@ -214,7 +173,7 @@ function processCapabilities(xmlCap) {
 					var miny = node.getAttribute('miny');
 					var maxx = node.getAttribute('maxx');
 					var maxy = node.getAttribute('maxy');
-                                        BoundingBoxArray = new Array(minx,miny,maxx,maxy);
+                    BoundingBoxArray = new Array(minx,miny,maxx,maxy);
 					//break;
 				}
 				if (node.nodeName == 'Dimension' && node.getAttribute('name') == 'time') {
