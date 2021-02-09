@@ -19,19 +19,36 @@ import VectorSource from 'ol/source/Vector';
 import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
 
+/*
+const { JSDOM } = require("jsdom");
+const { window } = new JSDOM("");
+const {document } = (new JSDOM('')).window;
+global.document = document;
+var $ = jQuery = require("jquery")(window);
+*/
+import $ from 'jquery';
+window.jQuery = window.$ = $;
+
 //Configuration information
 var radarSite    = 'kmux';	// Radar site
-var radarProduct = 'cref';	// Radar product
+var radarProduct = 'bref_raw';	// Radar product
 var radarZoom    = 7;		// Radar initial zoom
 var radarWidth   = '400px';	// Radar map width
 var radarHeight  = '300px';	// Radar map height
 var style        = 'radar_reflectivity';	// should fetch this from capabilities
 var mapMarker    = true;			// Flag to place marker on map
 var homeLoc      = [-121.97259,36.99283];	// your house
-
+var autoPlay	 = true;	// true: startup with animation
+const mapCRS	 = 'EPSG:4326';		// Map coordinate reference system - Note: map center calculation below 
 var radarProd = radarSite+'_'+radarProduct;
-
+var animationMaxHours		= 1;			// Maximum hours for animation data
+var latitudeCenter		= 0;			// Map latitude center, zero means use radar site center
+var longitudeCenter		= 0;			// Map longitude center, zero means use radar site center
+var wmsLayerSource;
+var wmsLayer = null;
+var displayMap = null;  // OL Map object displayed in a DIV
 console.log('start '+radarProduct);
+const useLegendApi		= false;		// Use legend API to get legend URL or, if false, use legend URL in GetCapabilities
 
 var xmlCap = null;
 var defaultTime = null;
@@ -40,14 +57,28 @@ var startDate = null;
 var frameRate = 1.0; // frames per second
 var animationId = null;
 var allTimes = null;	// Array of datetime from GetCapabilities, converted to Date objects
-var BoundingBoxArray = null;
-var savedLayers = null;
+var bbox4326 = null;
+var displayLayers = null;
+var timeZone = "America/Los_Angeles";
 
-var home3857 = transform(homeLoc, 'EPSG:4326', 'EPSG:3857');
-//var home3857 = fromLonLat(homeLoc);
-var iconFeature = new Feature({
-  geometry: new Point([home3857[0],home3857[1]]),
-  name: 'HOME',
+$(document).ready(function() {
+    $('button[name="radar_product"]').addClass('btn-default');
+    $('button[name="radar_product"]').click(function() {
+        //console.log('button:'+$(this).val());
+        // clear btn-clicked from all buttons in the group
+        $('button[name="radar_product"]').removeClass('btn-clicked').addClass('btn-default');
+        $(this).removeClass('btn-default').addClass('btn-clicked');
+        radarProduct = $(this).val();
+        radarProd = radarSite+'_'+radarProduct;
+        getCapabilities();
+    });
+    $('button[name="location"]').click(function() {
+        //console.log('button:'+$(this).val());
+        // clear btn-clicked from all buttons in the group
+        $('button[name="location"]').removeClass('btn-clicked').addClass('btn-default');
+        $(this).removeClass('btn-default').addClass('btn-clicked');
+        changeLocation($(this).val());
+    });
 });
 
 // Create map marker icon (Reference: ol.style.Icon)
@@ -67,6 +98,66 @@ var redDotIcon = new Icon({
 	src: redDotSource
 });
 
+class HomeLocation {
+    constructor(name, lon_lat, radar_sta, time_zone) {
+        this.name = name;
+        this.lon_lat = lon_lat;
+        this.radar_sta = radar_sta;
+        this.loc3857 = transform(this.lon_lat, 'EPSG:4326', 'EPSG:3857');
+        this.time_zone = time_zone;
+    }
+    
+    getMarkerLayer() {
+        var iconFeature = new Feature({
+            geometry: new Point([this.loc3857[0],this.loc3857[1]]),
+            name: 'HOME',
+        });
+        var iconLayer = new VectorLayer({
+            source: new VectorSource({
+                features: [iconFeature]
+            }),
+            zIndex: 11,
+            style: new Style({
+                image: redDotIcon
+            })
+        });
+        return iconLayer;
+    }
+    
+    getRadarStation() {
+        return this.radar_sta;
+    }
+}
+
+var homeLolita = new HomeLocation('Sue', [-75.85384,42.16405], 'kbgm', "America/New_York");
+
+var homeDover = new HomeLocation('Dover', [-121.97259,36.99283], 'kmux', "America/Los_Angeles");
+
+var homeBobSeattle = new HomeLocation('Bob', [-122.03546,47.55889], 'katx', "America/Los_Angeles");
+
+var locations = new Array();
+locations['Dover'] = homeDover;
+locations['Sue'] = homeLolita;
+locations['Bob'] = homeBobSeattle;
+
+var currentLocation = null;
+
+function changeLocation(name) {
+    loc = locations[name];
+    currentLocation = loc;
+    radarSite = loc.getRadarStation();
+    radarProd = radarSite+'_'+radarProduct;
+    iconLayer = loc.getMarkerLayer();
+    getCapabilities();
+}
+/*
+var home3857 = transform(homeLoc, 'EPSG:4326', 'EPSG:3857');
+//var home3857 = fromLonLat(homeLoc);
+var iconFeature = new Feature({
+    geometry: new Point([home3857[0],home3857[1]]),
+    name: 'HOME',
+});
+
 var iconLayer = new VectorLayer({
 	source: new VectorSource({
 		features: [iconFeature]
@@ -76,137 +167,139 @@ var iconLayer = new VectorLayer({
 		image: redDotIcon
 	})
 });
+*/
 
-// wmsCap is a string representing XML. Use DOMparser and access the nodes.
-function processXmlCapabilities(wmsCap) {
-	var domParser = new DOMParser();
-	xmlCap = domParser.parseFromString(wmsCap, "text/xml");
-	dtArray = processCapabilities(xmlCap);
-	return dtArray;
-}
-
-// wmsCap is a string representing XML. Use WMSCapabilities to access the nodes as properties of an Object.
+// Process WmsCapabilities obtained from WMS request
+// NOTE: more friendly syntax than using XML
 function processWmsCapabilities(wmsCap) {
 	// Create 'result' object corresponding to XML returned from GetCapabilities
 	var parser = new WMSCapabilities();
 	var result = parser.read(wmsCap);
 	if(!result) throw new Error('Error parsing WMS Capabilites XML');
-	// Get Layer coresponding to radar site/product
-	// In XML parlance, find a Layer node with child node Name with value radarSiteProd
-	var layer = result.Capability.Layer.Layer.find( Layer => { return Layer.Name === radarSiteProd } )
-	if (!layer) throw new Error('Layer for '+radarSiteProd+' not found');
+	//console.log('WMSCapabilitie result'); console.dir(result);
 
-	// Get bounding box
-	var boundingBox = layer.BoundingBox.find( BoundingBox => { return BoundingBox.crs === 'CRS:84' } );
-	if (!boundingBox) throw new Error('BoundingBox not found');
+	// Get Layer corresponding to radar site/product
+	var layer = result.Capability.Layer.Layer.find( Layer => { return Layer.Name === radarProd } );
+	if (!layer) throw new Error('Layer for '+radarProd+' not found');
+    wmsLayer = layer;   // global
+	// Log the Layer abstract
+	console.log('Abstract: '+layer.Abstract);
+
+	// Get Dimension (containing default time, and array of time values)
+    // TODO: should not use Dimension[0], instead get Dimension name=time?
+	//var timeDimension = layer.Dimension[0];
+	var timeDimension = layer.Dimension.find( Dimension => {return Dimension.name === 'time' } );
+	if (!timeDimension) throw new Error('Dimension not found');
+
+	// Get default time for Dimensions
+	var defaultTimeStr = timeDimension.default;
+	if (!defaultTimeStr) throw new Error('Default time not found');
+	var defaultTime = new Date(defaultTimeStr);
+	console.log('default time (XML string) = '+defaultTimeStr+', defaultTime (converted to Date) = '+defaultTime.toISOString());
+
+	// Get earliest possible time to use for animation
+	if (animationMaxHours) {
+		var earliest = new Date(Date.now() - 3600000 * animationMaxHours);
+		console.log('Earliest possible time to use for animation = '+earliest.toISOString());
+    }
+	else var earliest = 0;
+
+	// Create array of Date values corresponding to GetCapabilities array of times, removing any older than our interest
+	// All available times are in an array of strings, oldest first, newest last
+	var allTimesStr = timeDimension.values.split(',');	// Convert string to array of (time) strings
+	console.log('allTimesStr.length = '+allTimesStr.length);
+	allTimesArr = new Array();
+	for (var i=0; i < allTimesStr.length; i++) {
+		var dateEntry = new Date(allTimesStr[i]);	// convert from ISOString to Date object
+		allTimesArr.push(dateEntry);
+    }
+	console.log('allTimesArr.length = '+allTimesArr.length);
+
+	// Get map bounding box
+	var boundingBox = layer.BoundingBox.find( BoundingBox => { return BoundingBox.crs === mapCRS } );
+	if (!boundingBox) throw new Error('Layer bounding box not found for CRS = '+mapCRS);
+	var mapbbox = boundingBox.extent;
+	console.log('bbox.extent = '+mapbbox.toString());
+    bbox4326 = new Array(mapbbox[1],mapbbox[0],mapbbox[3],mapbbox[2]);
+
+	// Calculate center for map
+	if (latitudeCenter) var mapCenterLatitude = latitudeCenter;
+	else var mapCenterLatitude = (Number(mapbbox[0])+Number(mapbbox[2]))/2.0;	// Assumes mapCRS is in lat/lon units
+	if (longitudeCenter) var mapCenterLongitude = longitudeCenter;
+	else var mapCenterLongitude = (Number(mapbbox[1])+Number(mapbbox[3]))/2.0;	// Assumes mapCRS is in lat/lon units
+	var mapCenterCoordinate = fromLonLat([mapCenterLongitude, mapCenterLatitude], mapCRS);
+	console.log('mapCenterCoordinate = '+mapCenterCoordinate.toString());
+    
+    return allTimesArr;
 }
 
+function ajaxStateChange() {
+    if (this.readyState != 4) {
+        console.log('getCapabilities readyState = '+this.readyState);
+        return;
+    }
+    else if (this.status == 200) {
+       // Typical action to be performed when the document is ready:
+       //document.getElementById("demo").innerHTML = xhttp.responseText;
+       console.log('getCapabilities length = '+this.responseText.length);
+        // wmsCap is a string representing XML. Convert to object.
+        wmsCap = this.responseText;
+        dtArr = processWmsCapabilities(wmsCap);
+        // remove old times from array
+        earliest = nHoursAgo(animationMaxHours);
+        console.log('earliest = '+earliest.toISOString());
+        allTimes = new Array();
+        for (i=0; i < dtArr.length; i++) {
+            if (dtArr[i] > earliest) allTimes.push(dtArr[i]);
+        }
+        defaultTime = allTimes[allTimes.length - 1];
+        console.log('allTimes.length='+allTimes.length+', defaultTime='+defaultTime.toISOString());
+        var dt = defaultTime;
+        var info = document.getElementById('info');
+        info.innerHTML = dt.toLocaleString();
+        startupDisplay(autoPlay);
+    }
+    else {
+        console.log('getCap failure');
+    }
+}
 // Function to issue GetCapabiliteis to the server and obtain and process required information.
 function getCapabilities() {
 	var url = 'https://opengeo.ncep.noaa.gov/geoserver/'+radarSite+'/ows?service=wms&version=1.3.0&request=GetCapabilities';
 	var xhttp = new XMLHttpRequest();
 	console.log('getCapabilities: start');
-	xhttp.onreadystatechange = function() {
-		if (this.readyState != 4) {
-			console.log('getCapabilities readyState = '+this.readyState);
-			return;
-		}
-		else if (this.status == 200) {
-		   // Typical action to be performed when the document is ready:
-		   //document.getElementById("demo").innerHTML = xhttp.responseText;
-		   console.log('getCapabilities length = '+xhttp.responseText.length);
-            // wmsCap is a string representing XML. Convert to object.
-		    wmsCap = xhttp.responseText;
-			var domParser = new DOMParser();
-			xmlCap = domParser.parseFromString(wmsCap, "text/xml");
-			dtArray = processCapabilities(xmlCap);
-			// remove old times from array
-			earliest = nHoursAgo(1);
-			console.log('earliest = '+earliest.toISOString());
-			allTimes = new Array();
-			for (i=0; i < dtArray.length; i++) {
-				if (dtArray[i] > earliest) allTimes.push(dtArray[i]);
-			}
-			defaultTime = allTimes[allTimes.length - 1];
-			console.log('allTimes.length='+allTimes.length+', defaultTime='+defaultTime.toISOString());
-			var dt = defaultTime;
-			var info = document.getElementById('info');
-			info.innerHTML = dt.toLocaleString();
-            startupDisplay();
-		}
-		else {
-			console.log('getCap failure');
-		}
-	};
+	xhttp.onreadystatechange = ajaxStateChange; // callback to process returned data
 	xhttp.open("GET", url, true);
 	xhttp.send();
 }
 
-// Function to process information obtained from GetCapabilities
-function processCapabilities(xmlCap) {
-	var layers = xmlCap.getElementsByTagName('Layer');
-	console.log('number of Layer = '+layers.length);
-	var node = null;
-	var layer = null;
-	var gotit = false;
-	
-	for (i = 0; i < layers.length; i++) {
-		layer = layers[i];
-		if (gotit) break;	// no need to look at additional layers
-		//console.log(layer.nodeName+' '+i);
-		if (layer.getAttribute('queryable') == null) continue;
-		for (j = 0; j < layer.childNodes.length; j++) {
-			node = layer.childNodes[j];
-			//console.log(node.nodeName);
-			//if (node.nodeName == 'Name') console.log('Name = '+node.childNodes[0].nodeValue);
-			if (node.nodeName == 'Name' && node.childNodes[0].nodeValue == radarProd) {
-				gotit = true;
-				console.log('found '+radarProd);
-			}
-			if (gotit) {
-				if (node.nodeName == 'Abstract') {
-					console.log('abstract: '+node.childNodes[0].nodeValue);
-					//break;
-				}
-				if (node.nodeName == 'BoundingBox' && node.getAttribute('CRS') == 'CRS:84') {
-					var minx = node.getAttribute('minx');
-					var miny = node.getAttribute('miny');
-					var maxx = node.getAttribute('maxx');
-					var maxy = node.getAttribute('maxy');
-                    BoundingBoxArray = new Array(minx,miny,maxx,maxy);
-					//break;
-				}
-				if (node.nodeName == 'Dimension' && node.getAttribute('name') == 'time') {
-					dt = node.getAttribute('default');
-					console.log('time = '+dt);
-					// all available times in an array of strings, oldest first, newest lastChild
-					var allTimesStr = node.childNodes[0].nodeValue.split(',');	// Array of times
-					break;
-				}
-
-			}
-		}
-	}
-	console.log('processCapabilities: allTimesStr.length='+allTimesStr.length);
-	dtArray = new Array();
-	for (i=0; i < allTimesStr.length; i++) {
-		dtArray.push(new Date(allTimesStr[i]));	// convert from ISOString to Date object
-	}
-	return dtArray;
+// Function to update legend in DOM
+function updateLegend(resolution) {
+	var graphicUrl = wmsLayerSource.getLegendUrl(resolution, {layer: radarProd});
+	console.log('graphicUrl = '+graphicUrl);
+	mapLegendElement.src = graphicUrl;
 }
 
 // Function to start map display
-function startupDisplay() {
+function startupDisplay(autoPlay) {
 
 	var startButton = document.getElementById('play');
 	startButton.addEventListener('click', play, false);
 
 	var stopButton = document.getElementById('pause');
 	stopButton.addEventListener('click', stop, false);
+    
+    var latestButton = document.getElementById('latest');
+    latestButton.addEventListener('click', stopLatest, false);
+
+	// Calculate center for map
+	var latitudeCenter = (Number(bbox4326[0])+Number(bbox4326[2]))/2.0;
+	var longitudeCenter = (Number(bbox4326[1])+Number(bbox4326[3]))/2.0;
+	var center4326 = new Array(latitudeCenter,longitudeCenter);
+	console.log('center4326 = '+center4326.toString());
+	var center3857 = transform(center4326, 'EPSG:4326', 'EPSG:3857');
 
 	// Map boundaries given by RidgeII for radar site, bottom left and top right corners
-	var bbox4326 = [...BoundingBoxArray];
-	console.log('bbox4326 = '+bbox4326.toString());
 	var bbox3857 = transformExtent(bbox4326, 'EPSG:4326', 'EPSG:3857');
 	console.log('bbox3857 = '+bbox3857.toString());
 	var bboxStr0 = bbox3857[0].toString();
@@ -216,65 +309,67 @@ function startupDisplay() {
 	// EPSG:3857 wants to get the bounding box in latitude,longitude, so rearrange
 	var bboxAll=bboxStr1+','+bboxStr0+','+bboxStr3+','+bboxStr2;
 
-        // Set the source and parameters for map
+    // the base layer, it's from a world map
+	var layerOSM = new TileLayer({source: new OSM()});
+
+    // radar image layer
 	var wmsSource = new ImageWMS({
 		url: 'https://opengeo.ncep.noaa.gov/geoserver/'+radarSite+'/ows',
 		params: {'service': 'WMS', 'version':'1.3.0', 'request':'GetMap','layers':radarProd,'style':style,'crs':'EPSG:3857',
-			'bbox':bboxAll,'format':'image/png','width':radarWidth,'height':radarHeight,'transparent':'true'},
+			'bbox':bboxAll,'format':'image/gif','width':radarWidth,'height':radarHeight,'transparent':'true'},
 		serverType: 'geoserver',
 		crossOrigin: 'anonymous',
 	});
-	
-	var legendUrl = "https://opengeo.ncep.noaa.gov:443/geoserver/styles/reflectivity.png";
-	var resolution = undefined;
-	//var legendUrl = wmsSource.getLegendUrl(resolution);
-	console.log('legendUrl = '+legendUrl);	console.log('legendUrl = '+legendUrl);
-	var img = document.getElementById('legend');
-	img.src = legendUrl;
-	
-	layerOSM = new TileLayer({source: new OSM()});
+	wmsLayerSource = wmsSource;
 
-	var wmsLayer = new ImageLayer({
-		source: wmsSource,
+	var wmsImageLayer = new ImageLayer({
+		source: wmsLayerSource,
 	});
-	console.log('iconLayer='+iconLayer);
-	savedLayers = [layerOSM, wmsLayer, iconLayer];
-	//savedLayers = [layerOSM, iconLayer];
-	
-	//markerLayer = getMarkerLayer();
-	//if (markerLayer) savedLayers.push(markerLayer);
-	//savedLayers.push(iconLayer);
+    
+	var legendImg = document.getElementById('legend');
 
-	// Calculate center for map
-	var latitudeCenter = (Number(BoundingBoxArray[0])+Number(BoundingBoxArray[2]))/2.0;
-	var longitudeCenter = (Number(BoundingBoxArray[1])+Number(BoundingBoxArray[3]))/2.0;
-	var center4326 = new Array(latitudeCenter,longitudeCenter);
-	console.log('center4326 = '+center4326.toString());
-	var center3857 = transform(center4326, 'EPSG:4326', 'EPSG:3857');
-
-	var view = new View({
+	var mapView = new View({
 		projection: 'EPSG:3857',
 		center: center3857,
 		zoom: radarZoom,
 	});
 
-	var map = new Map({
-		layers: savedLayers,
-		target: 'map',
-		view: view,
-	});
-	//map.addLayer(iconLayer);
+	// Set map legend on DOM element, if needed in HTML
+	if (legendImg) {
+		if (useLegendApi) updateLegend(mapView.getResolution());	// Initial legend using API
+		else {
+			// Update legend in DOM with URL from GetCapabilities
+			let onlineResourceHref = wmsLayer.Style[0].LegendURL[0].OnlineResource;
+			if (!onlineResourceHref) onlineResourceHref = 'data:,';
+			console.log('onlineResourceHref = '+onlineResourceHref);
+			legendImg.src = onlineResourceHref;
+        }
+    }
+	console.log('iconLayer='+iconLayer);
+	displayLayers = [layerOSM, wmsImageLayer, iconLayer];
+    if (displayMap) {
+        // Need to clear the DIV before updating entire Map object
+        document.getElementById('map').innerHTML = "";
+    }
+    displayMap = new Map({
+        layers: displayLayers,
+        target: 'map',
+        view: mapView,
+    });
+	
+	play();
 }
 
 // Function to set date/time for the next timed layer
-function setTime() {
+function nextLayer() {
 	startDateIdx += 1;
 	if (startDateIdx >= allTimes.length) startDateIdx = 0;
 	startDate = allTimes[startDateIdx];
 	// update the TIME param for the WMS layer
-	savedLayers[1].getSource().updateParams({'TIME': startDate.toISOString()});
+	displayLayers[1].getSource().updateParams({'TIME': startDate.toISOString()});
 	var el = document.getElementById('info');
-	el.innerHTML = startDate.toLocaleString();
+	//el.innerHTML = startDate.toLocaleString();
+	el.innerHTML = startDate.toLocaleString("en-US", {timeZone:currentLocation.time_zone, timeZoneName:"short"});
 }
 
 // functions to calculate 'one hour ago' for animation (from https://openlayers.org/en/latest/examples/wms-time.html)
@@ -291,19 +386,34 @@ var updateLegend = function (resolution) {
 */
 
 // Function to play animation
-var play = function () {
+function play() {
+    //console.log('button: play');
 	stop();
-	animationId = window.setInterval(setTime, 1000 / frameRate);
+	animationId = setInterval(nextLayer, 1000 / frameRate);
 };
 
 // Function to stop animation
-var stop = function () {
+function stop() {
+    //console.log('button: stop');
 	if (animationId !== null) {
-		window.clearInterval(animationId);
+		//window.clearInterval(animationId);
+		clearInterval(animationId);
 		animationId = null;
 	}
 };
 
+// stop animation and set image to latest
+function stopLatest() {
+    //console.log('button: stopLatest');
+    stop();
+    if (defaultTime) {
+        displayLayers[1].getSource().updateParams({'TIME': defaultTime.toISOString()});
+        var el = document.getElementById('info');
+        el.innerHTML = defaultTime.toLocaleString();
+    }
+}
+
 // Get capabilities for radar site WMS and process returned information.
 // Completion of GetCapabilites web request drives remainder of program initialization and execution.
-getCapabilities();
+//getCapabilities();
+changeLocation('Dover');

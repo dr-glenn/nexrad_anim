@@ -6,21 +6,74 @@
     <title>Radar WMS</title>
 
     <style>
-      .map {
-        width: 60%;
-        height:300px;
-      }
+	  .grid-container {
+		display: grid;
+		grid-template:
+			"h h h s" 50px
+			"m m m s" 310px
+			"f f f s" 80px
+			/ 1fr 1fr 1fr 1fr;
+		grid-gap: 5px;
+	  }
+	  .header { grid-area: h; }
+	  .map-area { grid-area: m; }
+	  .footer { grid-area: f; }
+	  .sidebar { grid-area: s; }
+	  .with-border { border-width: 1px; border-style: solid; border-color: blue; }
+	  
+	.btn-clicked { border: 3px solid blue; }
+	.btn-default { border: 2px solid green; }
+	.btn-group button {
+		background-color: #4CAF50;
+		color: white;
+		padding: 5px 5px;
+		cursor: pointer;
+		width: 90px;
+		text-align: center;
+		display: block;	/* buttons appear below each other */
+	}
+	/* prevent double borders */
+	.btn-group button:not(:last-child) {
+		border-bottom: none;
+	}
+	
+	/* Change background color on hover */
+	.btn-group button:hover  { background-color: #3e8e41; }
+	/* active and focus prevent the button from showing a different outline when clicked */
+	.btn-group button:active,button:focus { outline:0; outline-style:none; outline-width:0; }
     </style>
   </head>
   <body>
-	<h2>NWS Weather Radar</h2>
-    <div id="map" class="map"></div>
-    <div role="group" aria-label="Animation controls">
-      <button id="play" type="button">Play</button>
-      <button id="pause" type="button">Pause</button>
-      <span id="info"></span>
-    </div>
-	  <img id="legend" alt="legend goes here" width="500" height="40">
+  <div class="grid-container" style="width:760px;">
+	<div class="header with-border">
+		<h2>NWS Weather Radar</h2>
+	</div>
+    <div id="map" class="map-area with-border"></div>
+	<div class="footer with-border">
+		<div role="group" aria-label="Animation controls">
+		  <button id="play" type="button">Play</button>
+		  <button id="pause" type="button">Pause</button>
+		  <button id="latest" type="button">Stop</button>
+		  <span id="info"></span>
+		</div>
+		<img id="legend" alt="legend goes here" width="500" height="40">
+	</div>
+	<div id="ctrl_buttons" class="sidebar with-border">
+		<div id="rad_buttons" class="btn-group">
+			<button name="radar_product" value="cref">CREF</button>
+			<button name="radar_product" value="bref_raw">BREF_RAW</button>
+			<button name="radar_product" value="bdzd">BDZD</button>
+			<button name="radar_product" value="beet">BEET</button>
+		</div>
+		<div id="loc_buttons" style="margin-top: 10px;" class="btn-group">
+			<span>Locations</span>
+			<button name="location" value="Dover">Home</button>
+			<button name="location" value="Sue">Sue</button>
+			<button name="location" value="Bob">Bob</button>
+		</div>
+	</div>
+
+  </div>
 	  <script src="radar_site.js"></script>
   </body>
 </html>
