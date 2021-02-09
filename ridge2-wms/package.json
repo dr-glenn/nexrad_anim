@@ -2,10 +2,12 @@
   "name": "radar-ridge2",
   "dependencies": {
     "elm-pep": "^1.0.6",
-    "ol": "6.5.0"
+    "jdom": "^3.2.1",
+    "jquery": "^3.5.1",
+    "ol": "^6.5.0"
   },
   "devDependencies": {
-    "parcel": "^2.0.0-nightly.540"
+    "parcel": "^2.0.0-nightly.570"
   },
   "scripts": {
     "start": "parcel radar.html",

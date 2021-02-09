@@ -2,18 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-	<meta http-equiv="refresh" content="600">
+
     <title>Radar WMS</title>
 
     <style>
 	  .grid-container {
 		display: grid;
 		grid-template:
-			"h h h s" 50px
-			"m m m s" 310px
-			"f f f s" 80px
-			/ 1fr 1fr 1fr 1fr;
-		grid-gap: 5px;
+			"h h h h s" 50px
+			"m m m m s" 310px
+			"f f f f s" 80px
+			/ 1fr 1fr 1fr 1fr 1fr;
+		grid-gap: 2px;
 	  }
 	  .header { grid-area: h; }
 	  .map-area { grid-area: m; }
@@ -21,10 +21,11 @@
 	  .sidebar { grid-area: s; }
 	  .with-border { border-width: 1px; border-style: solid; border-color: blue; }
 	  
-	.btn-clicked { border: 3px solid blue; }
-	.btn-default { border: 2px solid green; }
+	.btn-clicked { background-color: #406040; }
+	.btn-default { background-color: #4CAF50;}
 	.btn-group button {
-		background-color: #4CAF50;
+		/*background-color: #4CAF50;*/
+		border: 2px solid green; 
 		color: white;
 		padding: 5px 5px;
 		cursor: pointer;
@@ -44,7 +45,7 @@
     </style>
   </head>
   <body>
-  <div class="grid-container" style="width:760px;">
+  <div class="grid-container" style="width:780px;">
 	<div class="header with-border">
 		<h2>NWS Weather Radar</h2>
 	</div>
@@ -60,13 +61,14 @@
 	</div>
 	<div id="ctrl_buttons" class="sidebar with-border">
 		<div id="rad_buttons" class="btn-group">
+			<span style="font-style: italic; font-size: 22px;">Radar Types</span>
 			<button name="radar_product" value="cref">CREF</button>
 			<button name="radar_product" value="bref_raw">BREF_RAW</button>
 			<button name="radar_product" value="bdzd">BDZD</button>
 			<button name="radar_product" value="beet">BEET</button>
 		</div>
 		<div id="loc_buttons" style="margin-top: 10px;" class="btn-group">
-			<span>Locations</span>
+			<span style="font-style: italic; font-size: 22px;">Locations</span>
 			<button name="location" value="Dover">Home</button>
 			<button name="location" value="Sue">Sue</button>
 			<button name="location" value="Bob">Bob</button>

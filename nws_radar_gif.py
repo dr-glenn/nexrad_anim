@@ -347,6 +347,7 @@ class RadarAnimator:
         :param anim_out: either a GIF filename or imageio.RETURN_BYTES.
         :return: None (if writing file) or byte array
         '''
+        logger.debug('create_anim_gif: start')
         if True:
             new_gifs = []
             for img in self.img_gifs:

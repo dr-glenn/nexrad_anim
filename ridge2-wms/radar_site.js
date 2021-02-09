@@ -60,8 +60,15 @@ var allTimes = null;	// Array of datetime from GetCapabilities, converted to Dat
 var bbox4326 = null;
 var displayLayers = null;
 var timeZone = "America/Los_Angeles";
+var startGetCapabilities = 0;   // time the lengthy getCapabilities
+var endGetCapabilities = 0;
+var refreshMinutes = 5;     // how often to perform GetCapabilities
 
+/*
 $(document).ready(function() {
+    $('#play').click(play);
+    $('#pause').click(stop);
+    $('#latest').click(stopLatest);
     $('button[name="radar_product"]').addClass('btn-default');
     $('button[name="radar_product"]').click(function() {
         //console.log('button:'+$(this).val());
@@ -80,6 +87,38 @@ $(document).ready(function() {
         changeLocation($(this).val());
     });
 });
+*/
+/*
+
+*/
+
+function radarClick() {
+    document.getElementsByName("radar_product").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    this.classList.remove('btn-default');
+    this.classList.add('btn-clicked');
+    radarProduct = this.value;
+    radarProd = radarSite+'_'+radarProduct;
+    getCapabilities();
+}
+
+function locationClick() {
+    document.getElementsByName("location").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    this.classList.remove('btn-default');
+    this.classList.add('btn-clicked');
+    changeLocation(this.value);
+}
+
+window.onload = function() {
+    // individual buttons that control animation
+	document.getElementById('play').addEventListener('click', play, false);
+	document.getElementById('pause').addEventListener('click', stop, false);
+    document.getElementById('latest').addEventListener('click', stopLatest, false);
+    // button groups that act like radio buttons
+    document.getElementsByName("radar_product").forEach((button) => {button.classList.add('btn-default');});
+    document.getElementsByName("radar_product").forEach((button) => {button.addEventListener("click", radarClick, false);});
+    document.getElementsByName("location").forEach((button) => {button.classList.add('btn-default');});
+    document.getElementsByName("location").forEach((button) => {button.addEventListener("click", locationClick, false);});
+}
 
 // Create map marker icon (Reference: ol.style.Icon)
 const bigHouseSource = 'https://openlayers.org/en/latest/examples/data/icon.png';
@@ -194,7 +233,7 @@ function processWmsCapabilities(wmsCap) {
 	// Get default time for Dimensions
 	var defaultTimeStr = timeDimension.default;
 	if (!defaultTimeStr) throw new Error('Default time not found');
-	var defaultTime = new Date(defaultTimeStr);
+	defaultTime = new Date(defaultTimeStr);
 	console.log('default time (XML string) = '+defaultTimeStr+', defaultTime (converted to Date) = '+defaultTime.toISOString());
 
 	// Get earliest possible time to use for animation
@@ -268,6 +307,7 @@ function getCapabilities() {
 	var url = 'https://opengeo.ncep.noaa.gov/geoserver/'+radarSite+'/ows?service=wms&version=1.3.0&request=GetCapabilities';
 	var xhttp = new XMLHttpRequest();
 	console.log('getCapabilities: start');
+    startGetCapabilities = new Date().getTime();    // time in milliseconds
 	xhttp.onreadystatechange = ajaxStateChange; // callback to process returned data
 	xhttp.open("GET", url, true);
 	xhttp.send();
@@ -282,15 +322,6 @@ function updateLegend(resolution) {
 
 // Function to start map display
 function startupDisplay(autoPlay) {
-
-	var startButton = document.getElementById('play');
-	startButton.addEventListener('click', play, false);
-
-	var stopButton = document.getElementById('pause');
-	stopButton.addEventListener('click', stop, false);
-    
-    var latestButton = document.getElementById('latest');
-    latestButton.addEventListener('click', stopLatest, false);
 
 	// Calculate center for map
 	var latitudeCenter = (Number(bbox4326[0])+Number(bbox4326[2]))/2.0;
@@ -357,7 +388,13 @@ function startupDisplay(autoPlay) {
         view: mapView,
     });
 	
-	play();
+    endGetCapabilities = new Date().getTime();
+	remainingMilliseconds = (refreshMinutes * 60 * 1000) - (endGetCapabilities - startGetCapabilities);	// Calculate remaining time
+	if (remainingMilliseconds > 0) refreshId = setTimeout(getCapabilities, remainingMilliseconds);
+    
+    if (autoPlay) {
+        play();
+    }
 }
 
 // Function to set date/time for the next timed layer
@@ -404,12 +441,23 @@ function stop() {
 
 // stop animation and set image to latest
 function stopLatest() {
-    //console.log('button: stopLatest');
+    console.log('stopLatest: clicked');
     stop();
+    if (currentLocation) {
+        console.log('stopLatest: time_zone='+currentLocation.time_zone);
+    }
+    else {
+        console.log('stopLatest: currentLocation = null');
+    }
     if (defaultTime) {
+        console.log('stopLatest, defaultTime='+defaultTime.toISOString());
         displayLayers[1].getSource().updateParams({'TIME': defaultTime.toISOString()});
         var el = document.getElementById('info');
-        el.innerHTML = defaultTime.toLocaleString();
+        //el.innerHTML = defaultTime.toLocaleString();
+       	el.innerHTML = defaultTime.toLocaleString("en-US", {timeZone: currentLocation.time_zone, timeZoneName:"short"});
+    }
+    else {
+        console.log('stopLatest: defaultTime is null');
     }
 }
 
