@@ -9,6 +9,7 @@
 	  .grid-container {
 		display: grid;
 		grid-template:
+			/* 3 rows with specified height. 4 columns, each equal fraction of total width */
 			"h h h s" 50px
 			"m m m s" 310px
 			"f f f s" 80px
@@ -60,16 +61,25 @@
 		</div>
 		<img id="legend" alt="legend goes here" width="500" height="40">
 	</div>
-	<div id="ctrl_buttons" class="sidebar with-border">
-		<div id="rad_buttons" class="btn-group">
-			<span style="font-style: italic; font-size: 22px;">Radar Types</span>
-			<button name="radar_product" value="cref">CREF</button>
-			<button name="radar_product" value="bref_raw">BREF_RAW</button>
-			<button name="radar_product" value="bdzd">BDZD</button>
-			<button name="radar_product" value="beet">BEET</button>
+	<div id="side_panel" class="sidebar with-border" style="display:flex; flex-direction:column; justify-content:stretch;">
+		<div id="ctrl_buttons">
+			<div id="rad_buttons" class="btn-group">
+				<span style="font-style: italic; font-size: 22px;">Radar</span>
+				<button name="radar_product" value="cref">CREF</button>
+				<button name="radar_product" value="bref_raw">BREF_RAW</button>
+				<button name="radar_product" value="bdzd">BDZD</button>
+				<button name="radar_product" value="beet">BEET</button>
+			</div>
+			<div id="loc_buttons" style="margin-top: 10px;" class="btn-group">
+				<span style="font-style: italic; font-size: 22px;">Locations</span>
+				<!-- location buttons are added here by JS code -->
+			</div>
 		</div>
-		<div id="loc_buttons" style="margin-top: 10px;" class="btn-group">
-			<span style="font-style: italic; font-size: 22px;">Locations</span>
+		<div id="hourly_fcsts">
+		</div>
+		<!-- force this button to bottom of parent DIV using flex-end -->
+		<div style="margin-top:auto; width:100%; align-self:flex-end;">
+			<button id="next_panel" type="button">Show Forecasts</button>
 		</div>
 	</div>
 

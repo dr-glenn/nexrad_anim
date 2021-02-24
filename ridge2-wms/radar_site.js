@@ -55,11 +55,12 @@ var startDateIdx = 0;
 var startTime = null;   // a Date-Time value from WMSCapabilities
 var frameRate = 1.0; // frames per second
 var animationId = null; // when not null, animation is running
+var refreshId = null;   // ID for setTimeout to refresh getCapabilities
 var bbox4326 = null;    // bounding box in 4326 coordinates
 var displayLayers = null;   // Array of layers in the Map display
 var timeZone = "America/Los_Angeles";
 var startGetCapabilities = 0;   // time the lengthy getCapabilities call
-var endGetCapabilities = 0;     // finish the lengthy getCapabilies call
+var endGetCapabilities = 0;     // finish the lengthy getCapabilities call
 var refreshMinutes = 5;         // how often to perform GetCapabilities
 var CountTimer = 0;     // time since most recent image in seconds
 
@@ -99,6 +100,8 @@ window.onload = function() {
     // button groups that act like radio buttons
     document.getElementsByName("radar_product").forEach((button) => {button.classList.add('btn-default');});
     document.getElementsByName("radar_product").forEach((button) => {button.addEventListener("click", radarClick, false);});
+    
+    document.getElementById('next_panel').addEventListener('click', nextPanel, false);
     createLocationButtons();
 }
 
@@ -132,6 +135,38 @@ function locationClick() {
     changeLocation(this.value);
 }
 
+var sidePanels = ['ctrl_buttons','hourly_fcsts'];   // IDs of DIV within the sidebar
+var sidePanelsButtonTxt = ['Radar Control','Forecasts'];    // text for button that switches panels
+var sidePanelIdx = 0;
+// handle button click, display next panel
+function nextPanel() {
+    var oldPanel = document.getElementById(sidePanels[sidePanelIdx]);
+    oldPanel.style.display = "none";
+    sidePanelIdx += 1;
+    if (sidePanelIdx >= sidePanels.length) sidePanelIdx = 0;
+    var nextIdx = sidePanelIdx + 1;
+    if (nextIdx >= sidePanels.length) nextIdx = 0;
+    var nextButtonTxt = sidePanelsButtonTxt[nextIdx];
+    document.querySelector('#next_panel').innerHTML = nextButtonTxt;
+    
+    // replace current panel with next from sidePanels
+    var sidebar = document.getElementById("sidebar");
+    var newId = sidePanels[sidePanelIdx];
+    var newPanel = document.getElementById(newId);
+    console.log('newPanel='+newId);
+    if (newId == 'hourly_fcsts') {
+        var lon_lat = currentLocation.getLonLat();
+        var req_args = {'lon_lat': lon_lat.toString()};
+        //console.log('req_args = '+req_args.toString());
+        //console.log('thing: '+new URLSearchParams(req_args));
+        fetch('http://localhost:5000/hourly_divs?'+new URLSearchParams(req_args)).
+            then( response => response.text() ).
+            then( data => {newPanel.innerHTML = data;} );
+    }
+    newPanel.style.display = "block";
+}
+
+
 // Create map marker icon (Reference: ol.style.Icon)
 // a big house on the map
 const bigHouseSource = 'https://openlayers.org/en/latest/examples/data/icon.png';
@@ -161,6 +196,7 @@ class HomeLocation {
         this.time_zone = time_zone; // at the home location
     }
     getHomeName() { return this.name; }
+    getLonLat() { return this.lon_lat; }
     
     getMarkerLayerOld() {
         var iconFeature = new Feature({
@@ -312,7 +348,7 @@ function ajaxStateChange() {
         startupDisplay(autoPlay);   // fill in the page contents
     }
     else {
-        console.log('getCap failure');
+        console.log('getCapabilities failure');
     }
 }
 // Function to issue GetCapabiliteis to the server and obtain and process required information.
@@ -406,6 +442,7 @@ function startupDisplay(autoPlay) {
     // Calculate remaining time until next refresh: GetCapabilities can take many seconds
     endGetCapabilities = new Date().getTime();
 	remainingMilliseconds = (refreshMinutes * 60 * 1000) - (endGetCapabilities - startGetCapabilities);
+    console.log('setTimeout for getCapabilities');
 	if (remainingMilliseconds > 0) refreshId = setTimeout(getCapabilities, remainingMilliseconds);
     
     if (autoPlay) {
@@ -466,6 +503,15 @@ function image_timer() {
         var then = new Date(defaultTime);
         var tdiff = now - then;     // milliseconds
         elem.innerHTML = new Date(tdiff).toISOString().substr(11,8);
+        
+        if (tdiff/1000.0 > (2 * refreshMinutes * 60)) {
+            // something went wrong and we're not fetching new Capabilities
+            if (refreshId) {
+                // kill the timer
+                clearTimeout(refreshId);
+                getCapabilities();
+            }
+        }
     }
 }
 
