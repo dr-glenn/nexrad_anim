@@ -21,47 +21,45 @@ import Icon from 'ol/style/Icon';
 import { Style, Circle as CircleStyle, Fill } from 'ol/style';
 
 /*
-const { JSDOM } = require("jsdom");
-const { window } = new JSDOM("");
-const {document } = (new JSDOM('')).window;
-global.document = document;
-var $ = jQuery = require("jquery")(window);
-*/
 import $ from 'jquery';
 window.jQuery = window.$ = $;
+*/
 
 //Configuration information
 var radarSite    = 'kmux';	// Radar site
 var radarProduct = 'bref_raw';	// Radar product
+var radarProd    = radarSite+'_'+radarProduct; // can be changed with buttons
 var radarZoom    = 7;		// Radar initial zoom
 var radarWidth   = '400px';	// Radar map width
 var radarHeight  = '300px';	// Radar map height
 var wmsImageStyle = 'radar_reflectivity';	// should fetch this from capabilities
 var autoPlay	 = true;	// true: startup with animation
 const mapCRS	 = 'EPSG:4326';		// Map coordinate reference system - Note: map center calculation below 
-var radarProd = radarSite+'_'+radarProduct; // can be changed with buttons
 var animationMaxHours	= 1;			// Maximum hours for animation data
 // TODO: next 2 should nt be used
 var latitudeCenter		= 0;			// Map latitude center, zero means use radar site center
 var longitudeCenter		= 0;			// Map longitude center, zero means use radar site center
 var wmsLayerSource = null;
 var wmsLayer = null;
+var iconLayer = null;
 var displayMap = null;  // OL Map object displayed in a DIV
 const useLegendApi		= false;		// Use legend API to get legend URL or, if false, use legend URL in GetCapabilities
 
+var lastGetCapTime = null;
 var defaultTime = null;     // from WMSCapabilities, the most recent radar time
 var allTimes = null;	// Array of datetime from WMSCapabilities, converted to Date objects
 var startDateIdx = 0;
 var startTime = null;   // a Date-Time value from WMSCapabilities
 var frameRate = 1.0; // frames per second
-var animationId = null; // when not null, animation is running
-var refreshId = null;   // ID for setTimeout to refresh getCapabilities
+var animationIntervalId = null; // when not null, animation is running
+var refreshTimerId = null;   // ID for setTimeout to refresh getCapabilities
 var bbox4326 = null;    // bounding box in 4326 coordinates
 var displayLayers = null;   // Array of layers in the Map display
 var timeZone = "America/Los_Angeles";
 var startGetCapabilities = 0;   // time the lengthy getCapabilities call
 var endGetCapabilities = 0;     // finish the lengthy getCapabilities call
 var refreshMinutes = 5;         // how often to perform GetCapabilities
+var retryShortTime = 10000;     // retry getCapabilities after failure. time in millisec
 var CountTimer = 0;     // time since most recent image in seconds
 
 console.log('start '+radarProduct);
@@ -153,7 +151,7 @@ function nextPanel() {
     var sidebar = document.getElementById("sidebar");
     var newId = sidePanels[sidePanelIdx];
     var newPanel = document.getElementById(newId);
-    console.log('newPanel='+newId);
+    //console.log('newPanel='+newId);
     if (newId == 'hourly_fcsts') {
         var lon_lat = currentLocation.getLonLat();
         var req_args = {'lon_lat': lon_lat.toString()};
@@ -198,23 +196,6 @@ class HomeLocation {
     getHomeName() { return this.name; }
     getLonLat() { return this.lon_lat; }
     
-    getMarkerLayerOld() {
-        var iconFeature = new Feature({
-            geometry: new Point([this.loc3857[0],this.loc3857[1]]),
-            name: 'HOME',
-        });
-        var iconLayer = new VectorLayer({
-            source: new VectorSource({
-                features: [iconFeature]
-            }),
-            zIndex: 11,
-            style: new Style({
-                image: redDotIcon
-            })
-        });
-        return iconLayer;
-    }
-    
     getMarkerLayer() {
         var iconFeature = new Feature({
             geometry: new Point([this.loc3857[0],this.loc3857[1]]),
@@ -252,12 +233,23 @@ var currentLocation = null; // will be set when changeLocation is called
 
 function changeLocation(idx) {
     // idx value 0 is the top-most button in the display
-    loc = locations[idx];
+    var loc = locations[idx];
     currentLocation = loc;
     radarSite = loc.getRadarStation();
     radarProd = radarSite+'_'+radarProduct;
     iconLayer = loc.getMarkerLayer();
     getCapabilities();
+}
+
+function killAllTimers() {
+    if (animationIntervalId) {
+		clearInterval(animationIntervalId);
+        animationIntervalId = null;
+    }
+    if (refreshTimerId) {
+        clearTimeout(refreshTimerId);
+        refreshTimerId = null;
+    }
 }
 
 // Process WmsCapabilities obtained from WMS request
@@ -286,31 +278,31 @@ function processWmsCapabilities(wmsCap) {
 	var defaultTimeStr = timeDimension.default;
 	if (!defaultTimeStr) throw new Error('Default time not found');
 	defaultTime = new Date(defaultTimeStr);
-	console.log('default time (XML string) = '+defaultTimeStr+', defaultTime (converted to Date) = '+defaultTime.toISOString());
+	//console.log('default time (XML string) = '+defaultTimeStr+', defaultTime (converted to Date) = '+defaultTime.toISOString());
 
 	// Get earliest possible time to use for animation
 	if (animationMaxHours) {
 		var earliest = new Date(Date.now() - 3600000 * animationMaxHours);
-		console.log('Earliest possible time to use for animation = '+earliest.toISOString());
+		//console.log('Earliest possible time to use for animation = '+earliest.toISOString());
     }
 	else var earliest = 0;
 
 	// Create array of Date values corresponding to GetCapabilities array of times, removing any older than our interest
 	// All available times are in an array of strings, oldest first, newest last
 	var allTimesStr = timeDimension.values.split(',');	// Convert string to array of (time) strings
-	console.log('allTimesStr.length = '+allTimesStr.length);
-	allTimesArr = new Array();
+	//console.log('allTimesStr.length = '+allTimesStr.length);
+	var allTimesArr = new Array();
 	for (var i=0; i < allTimesStr.length; i++) {
 		var dateEntry = new Date(allTimesStr[i]);	// convert from ISOString to Date object
 		allTimesArr.push(dateEntry);
     }
-	console.log('allTimesArr.length = '+allTimesArr.length);
+	//console.log('allTimesArr.length = '+allTimesArr.length);
 
 	// Get map bounding box
 	var boundingBox = layer.BoundingBox.find( BoundingBox => { return BoundingBox.crs === mapCRS } );
 	if (!boundingBox) throw new Error('Layer bounding box not found for CRS = '+mapCRS);
 	var mapbbox = boundingBox.extent;
-	console.log('bbox.extent = '+mapbbox.toString());
+	//console.log('bbox.extent = '+mapbbox.toString());
     bbox4326 = new Array(mapbbox[1],mapbbox[0],mapbbox[3],mapbbox[2]);
 
 	// Calculate center for map
@@ -319,44 +311,62 @@ function processWmsCapabilities(wmsCap) {
 	if (longitudeCenter) var mapCenterLongitude = longitudeCenter;
 	else var mapCenterLongitude = (Number(mapbbox[1])+Number(mapbbox[3]))/2.0;	// Assumes mapCRS is in lat/lon units
 	var mapCenterCoordinate = fromLonLat([mapCenterLongitude, mapCenterLatitude], mapCRS);
-	console.log('mapCenterCoordinate = '+mapCenterCoordinate.toString());
+	//console.log('mapCenterCoordinate = '+mapCenterCoordinate.toString());
     
     return allTimesArr;
 }
 
 function ajaxStateChange() {
+    var ok = true;
+    console.log('getCapabilities readyState = '+this.readyState);
     if (this.readyState != 4) {
-        console.log('getCapabilities readyState = '+this.readyState);
         return;
     }
     else if (this.status == 200) {
-       // Typical action to be performed when the document is ready:
-       //document.getElementById("demo").innerHTML = xhttp.responseText;
-       console.log('getCapabilities length = '+this.responseText.length);
+        lastGetCapTime = new Date().getTime();
+        //console.log('getCapabilities length = '+this.responseText.length);
         // wmsCap is a string representing XML. Convert to object.
-        wmsCap = this.responseText;
-        dtArr = processWmsCapabilities(wmsCap); // returns Array of radar image times
-        console.log('dtArr.length='+dtArr.length);
-        // remove old times from array
-        earliest = nHoursAgo(animationMaxHours);
-        console.log('earliest = '+earliest.toISOString());
-        allTimes = new Array();
-        for (i=0; i < dtArr.length; i++) {
-            if (dtArr[i] > earliest) allTimes.push(dtArr[i]);
+        var wmsCap = this.responseText;
+        try {
+            var dtArr = processWmsCapabilities(wmsCap); // returns Array of radar image times
+            //console.log('dtArr.length='+dtArr.length);
+            // remove old times from array
+            var earliest = nHoursAgo(animationMaxHours);
+            //console.log('earliest = '+earliest.toISOString());
+            allTimes = new Array();
+            for (var i=0; i < dtArr.length; i++) {
+                if (dtArr[i] > earliest) allTimes.push(dtArr[i]);
+            }
+            console.log('allTimes.length='+allTimes.length+', defaultTime='+defaultTime.toISOString());
+            startupDisplay(autoPlay);   // fill in the page contents
         }
-        console.log('allTimes.length='+allTimes.length+', defaultTime='+defaultTime.toISOString());
-        startupDisplay(autoPlay);   // fill in the page contents
+        catch (e)
+        {
+            console.error(e);
+            ok = false;
+        }
     }
     else {
-        console.log('getCapabilities failure');
+        console.error('getCapabilities failure');
+        lastGetCapTime = null;
+        ok = false;
+    }
+    if (!ok) {
+        // will need to run getCapabilities again
+        if (refreshTimerId) {
+            clearTimeout(refreshTimerId);
+            refreshTimerId = null;
+        }
+        refreshTimerId = setTimeout(getCapabilities,retryShortTime);
     }
 }
+
 // Function to issue GetCapabiliteis to the server and obtain and process required information.
 function getCapabilities() {
     // TODO: replace XMLHttpRequest with fetch: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
 	var url = 'https://opengeo.ncep.noaa.gov/geoserver/'+radarSite+'/ows?service=wms&version=1.3.0&request=GetCapabilities';
 	var xhttp = new XMLHttpRequest();
-	console.log('getCapabilities: start');
+	//console.log('getCapabilities: start');
     startGetCapabilities = new Date().getTime();    // measure how long it takes (milliseconds)
 	xhttp.onreadystatechange = ajaxStateChange; // callback to process returned data
 	xhttp.open("GET", url, true);
@@ -366,7 +376,7 @@ function getCapabilities() {
 // update legend in DOM
 function updateLegend(resolution) {
 	var graphicUrl = wmsLayerSource.getLegendUrl(resolution, {layer: radarProd});
-	console.log('graphicUrl = '+graphicUrl);
+	//console.log('graphicUrl = '+graphicUrl);
 	mapLegendElement.src = graphicUrl;
 }
 
@@ -377,12 +387,12 @@ function startupDisplay(autoPlay) {
 	var latitudeCenter = (Number(bbox4326[0])+Number(bbox4326[2]))/2.0;
 	var longitudeCenter = (Number(bbox4326[1])+Number(bbox4326[3]))/2.0;
 	var center4326 = new Array(latitudeCenter,longitudeCenter);
-	console.log('center4326 = '+center4326.toString());
+	//nsole.log('center4326 = '+center4326.toString());
 	var center3857 = transform(center4326, 'EPSG:4326', 'EPSG:3857');
 
 	// Map boundaries given by RidgeII for radar site, bottom left and top right corners
 	var bbox3857 = transformExtent(bbox4326, 'EPSG:4326', 'EPSG:3857');
-	console.log('bbox3857 = '+bbox3857.toString());
+	//nsole.log('bbox3857 = '+bbox3857.toString());
 	var bboxStr0 = bbox3857[0].toString();
 	var bboxStr1 = bbox3857[1].toString();
 	var bboxStr2 = bbox3857[2].toString();
@@ -422,7 +432,7 @@ function startupDisplay(autoPlay) {
 			// Update legend in DOM with URL from GetCapabilities
 			let onlineResourceHref = wmsLayer.Style[0].LegendURL[0].OnlineResource;
 			if (!onlineResourceHref) onlineResourceHref = 'data:,';
-			console.log('onlineResourceHref = '+onlineResourceHref);
+			//nsole.log('onlineResourceHref = '+onlineResourceHref);
 			legendImg.src = onlineResourceHref;
         }
     }
@@ -441,9 +451,12 @@ function startupDisplay(autoPlay) {
 	
     // Calculate remaining time until next refresh: GetCapabilities can take many seconds
     endGetCapabilities = new Date().getTime();
-	remainingMilliseconds = (refreshMinutes * 60 * 1000) - (endGetCapabilities - startGetCapabilities);
-    console.log('setTimeout for getCapabilities');
-	if (remainingMilliseconds > 0) refreshId = setTimeout(getCapabilities, remainingMilliseconds);
+	var remainingMilliseconds = (refreshMinutes * 60 * 1000) - (endGetCapabilities - startGetCapabilities);
+    console.log('setTimeout for getCapabilities: '+remainingMilliseconds.toString());
+	if (remainingMilliseconds > 0) {
+        if (refreshTimerId) { clearTimeout(refreshTimerId); refreshTimerId = null; }
+        refreshTimerId = setTimeout(getCapabilities, remainingMilliseconds);
+    }
     
     if (autoPlay) {
         play();
@@ -470,9 +483,9 @@ function nHoursAgo(nHour) {
 // Function to stop animation
 function stop() {
     //console.log('button: stop');
-	if (animationId !== null) {
-		clearInterval(animationId);
-		animationId = null;
+	if (animationIntervalId !== null) {
+		clearInterval(animationIntervalId);
+		animationIntervalId = null;
 	}
 };
 
@@ -480,7 +493,7 @@ function stop() {
 function play() {
     //console.log('button: play');
 	stop();
-	animationId = setInterval(nextLayer, 1000 / frameRate);
+	animationIntervalId = setInterval(nextLayer, 1000 / frameRate);
 };
 
 // stop animation and set image to latest
@@ -492,7 +505,7 @@ function stopLatest() {
        	el.innerHTML = defaultTime.toLocaleString("en-US", {timeZone: currentLocation.time_zone, timeZoneName:"short"});
     }
     else {
-        console.log('stopLatest: defaultTime is null');
+        console.warn('stopLatest: defaultTime is null');
     }
 }
 
@@ -503,12 +516,15 @@ function image_timer() {
         var then = new Date(defaultTime);
         var tdiff = now - then;     // milliseconds
         elem.innerHTML = new Date(tdiff).toISOString().substr(11,8);
-        
-        if (tdiff/1000.0 > (2 * refreshMinutes * 60)) {
+
+        if (lastGetCapTime && (now-lastGetCapTime) > (60 * 1000 * 2 * refreshMinutes)) {
+            //console.log('image_timer: tdiff=%s',(tdiff/1000.0).toFixed(1));
+            console.warn('image_timer: watchdog triggered');
             // something went wrong and we're not fetching new Capabilities
-            if (refreshId) {
+            if (refreshTimerId) {
                 // kill the timer
-                clearTimeout(refreshId);
+                clearTimeout(refreshTimerId);
+                refreshTimerId = null;
                 getCapabilities();
             }
         }
@@ -519,4 +535,5 @@ function image_timer() {
 // Completion of GetCapabilites web request drives remainder of program initialization and execution.
 // changeLocation forces getCapabilities to run and that will update entire page.
 changeLocation(0);  // always start with location 0, assumed to be your home.
+// Do not ever kill image_timer, because it also functions as a watchdog
 var timerId = setInterval(image_timer, 1000);

@@ -1,13 +1,19 @@
 {
-  "name": "radar-ridge2",
+  "name": "ridge2-wms",
+  "version": "1.0.0",
+  "description": "NWS animated radar display",
+  "main": "radar_site.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Glenn Nelson",
+  "license": "ISC",
+  "devDependencies": {
+    "parcel": "^1.12.4"
+  },
   "dependencies": {
     "elm-pep": "^1.0.6",
-    "jdom": "^3.2.1",
-    "jquery": "^3.5.1",
     "ol": "^6.5.0"
-  },
-  "devDependencies": {
-    "parcel": "^2.0.0-nightly.570"
   },
   "scripts": {
     "start": "parcel radar.html",
