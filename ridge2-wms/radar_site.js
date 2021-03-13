@@ -19,6 +19,7 @@ import VectorSource from 'ol/source/Vector';
 //import Style from 'ol/style/Style';
 import Icon from 'ol/style/Icon';
 import { Style, Circle as CircleStyle, Fill } from 'ol/style';
+import Zoom from 'ol/control/Zoom';
 
 /*
 import $ from 'jquery';
@@ -59,10 +60,20 @@ var timeZone = "America/Los_Angeles";
 var startGetCapabilities = 0;   // time the lengthy getCapabilities call
 var endGetCapabilities = 0;     // finish the lengthy getCapabilities call
 var refreshMinutes = 5;         // how often to perform GetCapabilities
-var retryShortTime = 10000;     // retry getCapabilities after failure. time in millisec
+var retryShortTime = 15000;     // retry getCapabilities after failure. time in millisec
 var CountTimer = 0;     // time since most recent image in seconds
 
 console.log('start '+radarProduct);
+
+function time_error(msg) {
+    var now = new Date();
+    console.error(now.toISOString()+': '+msg);
+}
+
+function time_warn(msg) {
+    var now = new Date();
+    console.warn(now.toISOString()+': '+msg);
+}
 
 /*
 // jQuery code not used now
@@ -154,9 +165,10 @@ function nextPanel() {
     //console.log('newPanel='+newId);
     if (newId == 'hourly_fcsts') {
         var lon_lat = currentLocation.getLonLat();
-        var req_args = {'lon_lat': lon_lat.toString()};
+        var tz_hour = currentLocation.tz_off;
+        var req_args = {'lon_lat': lon_lat.toString(), 'hours': [1,2,3,6,9], 'tz': tz_hour};
         //console.log('req_args = '+req_args.toString());
-        //console.log('thing: '+new URLSearchParams(req_args));
+        console.log('thing: '+new URLSearchParams(req_args));
         fetch('http://localhost:5000/hourly_divs?'+new URLSearchParams(req_args)).
             then( response => response.text() ).
             then( data => {newPanel.innerHTML = data;} );
@@ -186,12 +198,13 @@ var redDotIcon = new Icon({
 
 // home long-lat coordinates and nearest radar
 class HomeLocation {
-    constructor(name, lon_lat, radar_sta, time_zone) {
+    constructor(name, lon_lat, radar_sta, time_zone, tz_off) {
         this.name = name;   // use name to display a button in the UI
         this.lon_lat = lon_lat; // display a marker at the home
         this.radar_sta = radar_sta;
         this.loc3857 = transform(this.lon_lat, 'EPSG:4326', 'EPSG:3857');
         this.time_zone = time_zone; // at the home location
+        this.tz_off = tz_off
     }
     getHomeName() { return this.name; }
     getLonLat() { return this.lon_lat; }
@@ -218,10 +231,10 @@ class HomeLocation {
     getRadarStation() { return this.radar_sta; }
 }
 
-var homeDover = new HomeLocation('Dover', [-121.97259,36.99283], 'kmux', "America/Los_Angeles");
-var homeLolita = new HomeLocation('Sue', [-75.85384,42.16405], 'kbgm', "America/New_York");
-var homeBobSeattle = new HomeLocation('Bob', [-122.03546,47.55889], 'katx', "America/Los_Angeles");
-var portlandLoc = new HomeLocation('Portland', [-122.68334,45.51689], 'krtx', "America/Los_Angeles");
+var homeDover = new HomeLocation('Dover', [-121.97259,36.99283], 'kmux', "America/Los_Angeles", -8);
+var homeLolita = new HomeLocation('Sue', [-75.85384,42.16405], 'kbgm', "America/New_York", -5);
+var homeBobSeattle = new HomeLocation('Bob', [-122.03546,47.55889], 'katx', "America/Los_Angeles", -8);
+var portlandLoc = new HomeLocation('Portland', [-122.68334,45.51689], 'krtx', "America/Los_Angeles", -8);
 
 // Location buttons are created from this Array and ordered on screen from 0 to N
 var locations = new Array();
@@ -342,12 +355,12 @@ function ajaxStateChange() {
         }
         catch (e)
         {
-            console.error(e);
+            time_error(e);
             ok = false;
         }
     }
     else {
-        console.error('getCapabilities failure');
+        time_error('getCapabilities failure');
         lastGetCapTime = null;
         ok = false;
     }
@@ -446,6 +459,7 @@ function startupDisplay(autoPlay) {
         layers: displayLayers,
         target: 'map',
         view: mapView,
+        controls: [new Zoom(),],
     });
     // TODO: look for renderComplete to make a Loading indicator. Or Map.render
 	
@@ -505,7 +519,7 @@ function stopLatest() {
        	el.innerHTML = defaultTime.toLocaleString("en-US", {timeZone: currentLocation.time_zone, timeZoneName:"short"});
     }
     else {
-        console.warn('stopLatest: defaultTime is null');
+        time_warn('stopLatest: defaultTime is null');
     }
 }
 
@@ -517,10 +531,11 @@ function image_timer() {
         var tdiff = now - then;     // milliseconds
         elem.innerHTML = new Date(tdiff).toISOString().substr(11,8);
 
+        // Something went wrong and we're not fetching new Capabilities.
+        // If more than 2*refresh time, then force a retry.
         if (lastGetCapTime && (now-lastGetCapTime) > (60 * 1000 * 2 * refreshMinutes)) {
             //console.log('image_timer: tdiff=%s',(tdiff/1000.0).toFixed(1));
-            console.warn('image_timer: watchdog triggered');
-            // something went wrong and we're not fetching new Capabilities
+            time_warn('image_timer: watchdog triggered');
             if (refreshTimerId) {
                 // kill the timer
                 clearTimeout(refreshTimerId);

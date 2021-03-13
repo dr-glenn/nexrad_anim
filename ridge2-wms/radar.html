@@ -2,18 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-
     <title>Radar WMS</title>
 
-    <style>
-	  .grid-container {
+  <style>
+	.grid-container {
 		display: grid;
 		grid-template:
-			/* 3 rows with specified height. 4 columns, each equal fraction of total width */
-			"h h h s" 50px
-			"m m m s" 310px
-			"f f f s" 80px
-			/ 1fr 1fr 1fr 1fr;
+			/* 3 rows with specified height. 2 columns, the sidebar is fixed width */
+			"h s" 50px
+			"m s" 310px
+			"f s" 80px
+			/ 1fr 210px;
 		grid-gap: 2px;
 	  }
 	  .header { grid-area: h; }
@@ -43,12 +42,12 @@
 	.btn-group button:hover  { background-color: #3e8e41; }
 	/* active and focus prevent the button from showing a different outline when clicked */
 	.btn-group button:active,button:focus { outline:0; outline-style:none; outline-width:0; }
-    </style>
-  </head>
+  </style>
+  
   <body>
-  <div class="grid-container" style="width:800px;">
+  <div class="grid-container" style="width:792px;">
 	<div class="header with-border">
-		<span style="font-size:24px; font-weight:bold;" >NWS Weather Radar</span>
+		<span style="font-size:24px; font-weight:bold;">NWS Weather Radar</span>
 		<span style="float:right; font-size:24px; margin-right:8px;"><span>Last Update: </span><span id="img_timer"></span></span>
 	</div>
     <div id="map" class="map-area with-border"></div>
@@ -84,6 +83,6 @@
 	</div>
 
   </div>
-	  <script src="radar_site.js"></script>
+	  <script src="/radar_site.js"></script>
   </body>
 </html>

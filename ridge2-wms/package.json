@@ -4,7 +4,8 @@
   "description": "NWS animated radar display",
   "main": "radar_site.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "parcel radar.html",
+    "build": "parcel build --public-url . radar.html"
   },
   "author": "Glenn Nelson",
   "license": "ISC",
@@ -14,9 +15,5 @@
   "dependencies": {
     "elm-pep": "^1.0.6",
     "ol": "^6.5.0"
-  },
-  "scripts": {
-    "start": "parcel radar.html",
-    "build": "parcel build --public-url . radar.html"
   }
 }
