@@ -529,7 +529,12 @@ function image_timer() {
         var now = Date.now();
         var then = new Date(defaultTime);
         var tdiff = now - then;     // milliseconds
-        elem.innerHTML = new Date(tdiff).toISOString().substr(11,8);
+        var str0 = new Date(tdiff).toISOString().substr(11,8);
+        var str1 = str0.replace(':','h');
+        var str2 = str1.replace(':','m');
+        str2 += 's';
+        if (str2.startsWith('00')) str2 = str2.substr(3,6);
+        elem.innerHTML = str2;
 
         // Something went wrong and we're not fetching new Capabilities.
         // If more than 2*refresh time, then force a retry.
