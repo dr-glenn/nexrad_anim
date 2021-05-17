@@ -111,6 +111,7 @@ window.onload = function() {
     document.getElementsByName("radar_product").forEach((button) => {button.addEventListener("click", radarClick, false);});
     
     document.getElementById('next_panel').addEventListener('click', nextPanel, false);
+    document.getElementById('daily_fcst').addEventListener('click', dailyFcst, false);
     createLocationButtons();
 }
 
@@ -133,6 +134,7 @@ function radarClick() {
     this.classList.remove('btn-default');
     this.classList.add('btn-clicked');
     radarProduct = this.value;
+    document.getElementById('radar_type').value = radarProduct;
     radarProd = radarSite+'_'+radarProduct;
     getCapabilities();
 }
@@ -176,6 +178,10 @@ function nextPanel() {
     newPanel.style.display = "block";
 }
 
+// Handle daily_fcst button
+function dailyFcst() {
+    
+}
 
 // Create map marker icon (Reference: ol.style.Icon)
 // a big house on the map
@@ -204,10 +210,11 @@ class HomeLocation {
         this.radar_sta = radar_sta;
         this.loc3857 = transform(this.lon_lat, 'EPSG:4326', 'EPSG:3857');
         this.time_zone = time_zone; // at the home location
-        this.tz_off = tz_off
+        this.tz_off = tz_off;
     }
     getHomeName() { return this.name; }
     getLonLat() { return this.lon_lat; }
+    getTzOff() { return this.tz_off; }
     
     getMarkerLayer() {
         var iconFeature = new Feature({
@@ -231,22 +238,32 @@ class HomeLocation {
     getRadarStation() { return this.radar_sta; }
 }
 
+// Location buttons are created from this Array and ordered on screen from 0 to N
+var locations = new Array();
 var homeDover = new HomeLocation('Dover', [-121.97259,36.99283], 'kmux', "America/Los_Angeles", -8);
 var homeLolita = new HomeLocation('Sue', [-75.85384,42.16405], 'kbgm', "America/New_York", -5);
 var homeBobSeattle = new HomeLocation('Bob', [-122.03546,47.55889], 'katx', "America/Los_Angeles", -8);
 var portlandLoc = new HomeLocation('Portland', [-122.68334,45.51689], 'krtx', "America/Los_Angeles", -8);
-
-// Location buttons are created from this Array and ordered on screen from 0 to N
-var locations = new Array();
 locations.push(homeDover);
 locations.push(homeLolita);
 locations.push(homeBobSeattle);
 locations.push(portlandLoc);
 var currentLocation = null; // will be set when changeLocation is called
 
+function storeLoc(loc) {
+    // store into form
+    var lon_lat = loc.getLonLat();
+    document.getElementById('lon_lat').value = lon_lat.toString();
+    document.getElementById('tz_off').value = loc.getTzOff();
+    document.getElementById('radar_sta').value = loc.getRadarStation();
+    document.getElementById('home_name').value = loc.getHomeName();
+    // radar_type is stored when radarClick is called
+    //document.getElementById('radar_type').value = radarProduct;
+}
 function changeLocation(idx) {
     // idx value 0 is the top-most button in the display
     var loc = locations[idx];
+    storeLoc(loc);
     currentLocation = loc;
     radarSite = loc.getRadarStation();
     radarProd = radarSite+'_'+radarProduct;
