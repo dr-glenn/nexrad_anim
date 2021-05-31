@@ -113,6 +113,8 @@ window.onload = function() {
     document.getElementById('next_panel').addEventListener('click', nextPanel, false);
     document.getElementById('daily_fcst').addEventListener('click', dailyFcst, false);
     createLocationButtons();
+    
+    kickOffDisplay();
 }
 
 function createLocationButtons() {
@@ -130,7 +132,9 @@ function createLocationButtons() {
 }
 
 function radarClick() {
+    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
     document.getElementsByName("radar_product").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    // now remove class btn-default from new selected button and add btn-clicked
     this.classList.remove('btn-default');
     this.classList.add('btn-clicked');
     radarProduct = this.value;
@@ -140,9 +144,11 @@ function radarClick() {
 }
 
 function locationClick() {
-    document.getElementsByName("location").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
-    this.classList.remove('btn-default');
-    this.classList.add('btn-clicked');
+    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
+    //document.getElementsByName("location").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    // now remove class btn-default from new selected button and add btn-clicked
+    //this.classList.remove('btn-default');
+    //this.classList.add('btn-clicked');
     changeLocation(this.value);
 }
 
@@ -250,6 +256,14 @@ locations.push(homeBobSeattle);
 locations.push(portlandLoc);
 var currentLocation = null; // will be set when changeLocation is called
 
+// get value of a GET request parameter
+// see https://stackoverflow.com/questions/831030/how-to-get-get-request-parameters-in-javascript
+// USE: val=get_req('foo'); if (val === undefined) <no value>;
+function get_req(name) {
+   if(name=(new RegExp('[?&]'+encodeURIComponent(name)+'=([^&]*)')).exec(location.search))
+      return decodeURIComponent(name[1]);
+}
+
 function storeLoc(loc) {
     // store into form
     var lon_lat = loc.getLonLat();
@@ -262,6 +276,18 @@ function storeLoc(loc) {
 }
 function changeLocation(idx) {
     // idx value 0 is the top-most button in the display
+    // don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
+    document.getElementsByName("location").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    // find button that matches idx
+    console.log('changeLocation: '+idx.toString());
+    document.getElementsByName("location").forEach((button) => { if (button.value == idx.toString()) {
+        console.log('changeLocation matched');
+        // now remove class btn-default from new selected button and add btn-clicked
+        button.classList.remove('btn-default');
+        button.classList.add('btn-clicked');
+        }
+    });
+    
     var loc = locations[idx];
     storeLoc(loc);
     currentLocation = loc;
@@ -568,9 +594,23 @@ function image_timer() {
     }
 }
 
-// Get capabilities for radar site WMS and process returned information.
-// Completion of GetCapabilites web request drives remainder of program initialization and execution.
-// changeLocation forces getCapabilities to run and that will update entire page.
-changeLocation(0);  // always start with location 0, assumed to be your home.
-// Do not ever kill image_timer, because it also functions as a watchdog
-var timerId = setInterval(image_timer, 1000);
+// call this function when onLoad is complete
+function kickOffDisplay() {
+    
+    // look for request params
+    var home_name = get_req('home_name');
+    var home_idx = 0;
+    if (home_name === undefined) home_idx = 0;
+    else {
+        for (var i=0; i < locations.length; i++) {
+            if (home_name == locations[i].getHomeName()) {
+                home_idx = i;
+                break;
+            }
+        }
+    }
+    // changeLocation forces getCapabilities to run and that will update entire page.
+    changeLocation(home_idx);  // always start with location 0, assumed to be your home.
+    // Do not ever kill image_timer, because it also functions as a watchdog
+    var timerId = setInterval(image_timer, 1000);
+}
