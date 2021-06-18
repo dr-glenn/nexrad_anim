@@ -27,7 +27,7 @@ window.jQuery = window.$ = $;
 */
 
 //Configuration information
-var radarSite    = 'kmux';	// Radar site
+var radarSite    = 'kmux';	// Radar station designation
 var radarProduct = 'bref_raw';	// Radar product
 var radarProd    = radarSite+'_'+radarProduct; // can be changed with buttons
 var radarZoom    = 7;		// Radar initial zoom
@@ -37,7 +37,7 @@ var wmsImageStyle = 'radar_reflectivity';	// should fetch this from capabilities
 var autoPlay	 = true;	// true: startup with animation
 const mapCRS	 = 'EPSG:4326';		// Map coordinate reference system - Note: map center calculation below 
 var animationMaxHours	= 1;			// Maximum hours for animation data
-// TODO: next 2 should nt be used
+// TODO: next 2 should not be used
 var latitudeCenter		= 0;			// Map latitude center, zero means use radar site center
 var longitudeCenter		= 0;			// Map longitude center, zero means use radar site center
 var wmsLayerSource = null;
@@ -131,16 +131,30 @@ function createLocationButtons() {
     }
 }
 
-function radarClick() {
-    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
-    document.getElementsByName("radar_product").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
-    // now remove class btn-default from new selected button and add btn-clicked
-    this.classList.remove('btn-default');
-    this.classList.add('btn-clicked');
-    radarProduct = this.value;
+function changeRadar(rtype) {
+    radarProduct = rtype;
+    // store the radar_type into form so that we can pass to other pages
     document.getElementById('radar_type').value = radarProduct;
+    // get all the radar_type buttons
+    var radButtons = document.getElementsByName("radar_product");
+    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
+    radButtons.forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    // now remove class btn-default from new selected button and add btn-clicked
+    radButtons.forEach((button) => { if (button.value === rtype) {
+        button.classList.remove('btn-default');
+        button.classList.add('btn-clicked');
+    }});
     radarProd = radarSite+'_'+radarProduct;
     getCapabilities();
+}
+
+function radarClick() {
+    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
+    //document.getElementsByName("radar_product").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
+    // now remove class btn-default from new selected button and add btn-clicked
+    //this.classList.remove('btn-default');
+    //this.classList.add('btn-clicked');
+    changeRadar(this.value);
 }
 
 function locationClick() {
@@ -308,7 +322,9 @@ function killAllTimers() {
     }
 }
 
-// Process WmsCapabilities obtained from WMS request
+// Process WmsCapabilities obtained from WMS request.
+// It sets some global vars.
+// return allTimesArr: all of the times that past images are available (usually 2 to 4 hours every 10 minutes)
 // NOTE: more friendly syntax than using XML
 function processWmsCapabilities(wmsCap) {
 	// Create 'result' object corresponding to XML returned from GetCapabilities
@@ -335,13 +351,6 @@ function processWmsCapabilities(wmsCap) {
 	if (!defaultTimeStr) throw new Error('Default time not found');
 	defaultTime = new Date(defaultTimeStr);
 	//console.log('default time (XML string) = '+defaultTimeStr+', defaultTime (converted to Date) = '+defaultTime.toISOString());
-
-	// Get earliest possible time to use for animation
-	if (animationMaxHours) {
-		var earliest = new Date(Date.now() - 3600000 * animationMaxHours);
-		//console.log('Earliest possible time to use for animation = '+earliest.toISOString());
-    }
-	else var earliest = 0;
 
 	// Create array of Date values corresponding to GetCapabilities array of times, removing any older than our interest
 	// All available times are in an array of strings, oldest first, newest last
@@ -386,7 +395,7 @@ function ajaxStateChange() {
         try {
             var dtArr = processWmsCapabilities(wmsCap); // returns Array of radar image times
             //console.log('dtArr.length='+dtArr.length);
-            // remove old times from array
+            // remove old times from array. dtArr may go back 4 hours, but we usually only want 1 hour.
             var earliest = nHoursAgo(animationMaxHours);
             //console.log('earliest = '+earliest.toISOString());
             allTimes = new Array();
@@ -534,7 +543,8 @@ function nextLayer() {
 
 // calculate 'one hour ago' for animation (from https://openlayers.org/en/latest/examples/wms-time.html)
 function nHoursAgo(nHour) {
-	return new Date(Date.now() - 3600000 * nHour);	// 3600000 milliseconds in an hour
+    var milli = Math.round(3600000 * nHour);    // nHour can be float
+	return new Date(Date.now() - milli);	// 3600000 milliseconds in an hour
 }
 
 // Function to stop animation
@@ -610,7 +620,11 @@ function kickOffDisplay() {
         }
     }
     // changeLocation forces getCapabilities to run and that will update entire page.
-    changeLocation(home_idx);  // always start with location 0, assumed to be your home.
+    changeLocation(home_idx);  // always start with location 0, assumed to be your home
+    var radar_type = get_req('radar_type');
+    if (radar_type === undefined) radar_type = 'bref_raw';
+    changeRadar(radar_type);
+    
     // Do not ever kill image_timer, because it also functions as a watchdog
     var timerId = setInterval(image_timer, 1000);
 }
