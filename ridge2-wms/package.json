@@ -2,7 +2,7 @@
   "name": "ridge2-wms",
   "version": "1.0.0",
   "description": "NWS animated radar display",
-  "main": "radar_site.js",
+  "main": "radar.js",
   "scripts": {
     "start": "parcel radar.html",
     "build": "parcel build --public-url . radar.html"

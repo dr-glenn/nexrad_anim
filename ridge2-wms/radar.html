@@ -50,7 +50,7 @@
 	<input type='text' id='tz_off' name='tz' value='-8'>
 	<input type='text' id='radar_type' name='radar_type' value='bref_raw'>
 	<input type='text' id='radar_sta' name='radar_sta' value='kmux'>
-	<input type='text' id='home_name' name='home_name' vlue='Dover'>
+	<input type='text' id='home_name' name='home_name' value='Dover'>
   </form>
   <div class="grid-container" style="width:792px;">
 	<div class="header with-border">
@@ -71,10 +71,10 @@
 		<div id="ctrl_buttons">
 			<div id="rad_buttons" class="btn-group">
 				<span style="font-style: italic; font-size: 22px;">Radar</span>
-				<button name="radar_product" value="cref">CREF</button>
 				<button name="radar_product" value="bref_raw">BREF_RAW</button>
-				<button name="radar_product" value="bdzd">BDZD</button>
-				<button name="radar_product" value="beet">BEET</button>
+				<button name="radar_product" value="bref_qcd">BREF_QCD</button>
+				<button name="radar_product" value="cref_raw">CREF_RAW</button>
+				<button name="radar_product" value="cref_qcd">CREF_QCD</button>
 			</div>
 			<div id="loc_buttons" style="margin-top: 10px;" class="btn-group">
 				<span style="font-style: italic; font-size: 22px;">Locations</span>
@@ -85,12 +85,13 @@
 		</div>
 		<!-- force this button to bottom of parent DIV using flex-end -->
 		<div style="margin-top:auto; width:100%; align-self:flex-end;">
-			<button id="next_panel" type="button">Today Fcst</button>
-			<button id='daily_fcst' type='submit' form='params'>Daily Fcsts</button>
+			<button id="next_panel" type="button">Today</button>
+			<button id='daily_fcst' type='button'>Daily Fcsts</button>
+			<button id='current_wx' type='button'>Now</button>
 		</div>
 	</div>
 
   </div>
-	  <script src="/radar_site.js"></script>
+	  <script src="/radar_conus.js"></script>
   </body>
 </html>

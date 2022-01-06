@@ -14,8 +14,17 @@ INSTALLATION
    npm install elm-pep
    npm install parcel
    npm install ol
-3. From the directory of this code, run node: "npx cross-env npm start"
+3. From the directory of this code, run node: "npx cross-env npm start" or just "npm start"
 4. Browse to "localhost;1234"
 
 You should now see the current CONUS (continental US) radar map.
+
+INSTALLATION to Raspberry Pi kiosk
+1. Copy the dist files to /var/www/html/
+2. reboot Pi
+2a. Sometimes you need to clear the Chromium cache.
+    cd ~/.cache/chromium/Default
+	rm -rf *
+	sudo reboot
+	
 
