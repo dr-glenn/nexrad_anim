@@ -112,6 +112,7 @@ window.onload = function() {
     
     document.getElementById('next_panel').addEventListener('click', nextPanel, false);
     document.getElementById('daily_fcst').addEventListener('click', dailyFcst, false);
+    document.getElementById('current_wx').addEventListener('click', currentWx, false);
     createLocationButtons();
     
     kickOffDisplay();
@@ -172,13 +173,13 @@ var sidePanelIdx = 0;
 // handle button click, display next panel
 function nextPanel() {
     var oldPanel = document.getElementById(sidePanels[sidePanelIdx]);
-    oldPanel.style.display = "none";
+    oldPanel.style.display = "none";    // hide the current side panel
     sidePanelIdx += 1;
     if (sidePanelIdx >= sidePanels.length) sidePanelIdx = 0;
     var nextIdx = sidePanelIdx + 1;
     if (nextIdx >= sidePanels.length) nextIdx = 0;
     var nextButtonTxt = sidePanelsButtonTxt[nextIdx];
-    document.querySelector('#next_panel').innerHTML = nextButtonTxt;
+    document.querySelector('#next_panel').innerHTML = nextButtonTxt;    // change the button label
     
     // replace current panel with next from sidePanels
     var sidebar = document.getElementById("sidebar");
@@ -200,7 +201,23 @@ function nextPanel() {
 
 // Handle daily_fcst button
 function dailyFcst() {
-    
+    // retrieve parameters and issue GET request
+    var form = document.getElementById('params');
+    var formData = new FormData(form);
+    // next shows how to read formData, but we don't actually need it
+    for (var pair of formData.entries()) {
+        //console.log(pair[0]+' : '+pair[1]);
+    }
+    //'http://localhost:5000/daily'
+    form.action = 'http://localhost:5000/daily';
+    form.submit();
+}
+
+function currentWx() {
+    // retrieve parameters and issue GET request
+    var form = document.getElementById('params');
+    form.action = 'http://localhost:5000/now';
+    form.submit();
 }
 
 // Create map marker icon (Reference: ol.style.Icon)

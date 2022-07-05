@@ -21,47 +21,42 @@ import Icon from 'ol/style/Icon';
 import { Style, Circle as CircleStyle, Fill } from 'ol/style';
 import Zoom from 'ol/control/Zoom';
 
-/*
-import $ from 'jquery';
-window.jQuery = window.$ = $;
-*/
-
-//Configuration information
-var radarSite    = 'conus';	// Radar station designation
-var radarProduct = 'bref_raw';	// Radar product
+// Configuration information
+var radarSite    = 'conus';	// Radar station designation - entire continental US
+var radarProduct = 'bref_qcd';	// Radar product
 var radarProd    = radarSite+'_'+radarProduct; // can be changed with buttons
 var radarZoom    = 5;		// Radar initial zoom
 var radarWidth   = '400px';	// Radar map width
 var radarHeight  = '300px';	// Radar map height
 var wmsImageStyle = 'radar_reflectivity';	// should fetch this from capabilities
 var autoPlay	 = true;	// true: startup with animation
-const mapCRS	 = 'EPSG:4326';		// Map coordinate reference system - Note: map center calculation below 
-var animationMaxHours	= 1;			// Maximum hours for animation data
+const mapCRS	 = 'EPSG:4326';		// Map coordinate reference system
+var animationMaxHours	= 1;			// (Not Used) Maximum hours for animation data
+var animationMaxMins = 90;      // Max minutes for animation data
+var animationFrameInterval = 8; // time spacing between frames
 // TODO: next 2 should not be used
 var latitudeCenter		= 0;			// Map latitude center, zero means use radar site center
 var longitudeCenter		= 0;			// Map longitude center, zero means use radar site center
 var wmsLayerSource = null;
 var wmsLayer = null;
 var iconLayer = null;
-var displayMap = null;  // OL Map object displayed in a DIV
+var displayMap = null;  // OL (OpenLayer) Map object displayed in a DIV
 const useLegendApi		= false;		// Use legend API to get legend URL or, if false, use legend URL in GetCapabilities
-
-var lastGetCapTime = null;
+var lastGetCapTime = null;  // used to time when to do next GetCapabilities
 var defaultTime = null;     // from WMSCapabilities, the most recent radar time
 var allTimes = null;	// Array of datetime from WMSCapabilities, converted to Date objects
 var startDateIdx = 0;
 var startTime = null;   // a Date-Time value from WMSCapabilities
-var frameRate = 1.0; // frames per second
+var frameRate = 1.0; // frames per second during animation
 var animationIntervalId = null; // when not null, animation is running
 var refreshTimerId = null;   // ID for setTimeout to refresh getCapabilities
 var bbox4326 = null;    // bounding box in 4326 coordinates
-var displayLayers = null;   // Array of layers in the Map display
-var timeZone = "America/Los_Angeles";
+var displayLayers = null;   // Array of layers in the Map display, e.g., basemap, radar, icons
+var timeZone = "America/Los_Angeles";   // default value, can change when other home is selected
 var startGetCapabilities = 0;   // time the lengthy getCapabilities call
 var endGetCapabilities = 0;     // finish the lengthy getCapabilities call
 var refreshMinutes = 5;         // how often to perform GetCapabilities
 var retryShortTime = 15000;     // retry getCapabilities after failure. time in millisec
-var CountTimer = 0;     // time since most recent image in seconds
 
 console.log('start '+radarProduct);
 
@@ -75,32 +70,6 @@ function time_warn(msg) {
     console.warn(now.toISOString()+': '+msg);
 }
 
-/*
-// jQuery code not used now
-$(document).ready(function() {
-    $('#play').click(play);
-    $('#pause').click(stop);
-    $('#latest').click(stopLatest);
-    $('button[name="radar_product"]').addClass('btn-default');
-    $('button[name="radar_product"]').click(function() {
-        //console.log('button:'+$(this).val());
-        // clear btn-clicked from all buttons in the group
-        $('button[name="radar_product"]').removeClass('btn-clicked').addClass('btn-default');
-        $(this).removeClass('btn-default').addClass('btn-clicked');
-        radarProduct = $(this).val();
-        radarProd = radarSite+'_'+radarProduct;
-        getCapabilities();
-    });
-    $('button[name="location"]').click(function() {
-        //console.log('button:'+$(this).val());
-        // clear btn-clicked from all buttons in the group
-        $('button[name="location"]').removeClass('btn-clicked').addClass('btn-default');
-        $(this).removeClass('btn-default').addClass('btn-clicked');
-        changeLocation($(this).val());
-    });
-});
-*/
-
 window.onload = function() {
     // individual buttons that control animation
 	document.getElementById('play').addEventListener('click', play, false);
@@ -110,10 +79,13 @@ window.onload = function() {
     document.getElementsByName("radar_product").forEach((button) => {button.classList.add('btn-default');});
     document.getElementsByName("radar_product").forEach((button) => {button.addEventListener("click", radarClick, false);});
     
+    // next_panel swaps the radar select buttons for hourly forecasts
     document.getElementById('next_panel').addEventListener('click', nextPanel, false);
+    // daily_fcst changes the display to daily forecasts for next 9 days 
     document.getElementById('daily_fcst').addEventListener('click', dailyFcst, false);
+    // current_wx changes the display to current weather conditions plus home sensor data
     document.getElementById('current_wx').addEventListener('click', currentWx, false);
-    createLocationButtons();
+    createLocationButtons();    // buttons for changing map center to other preferred locations
     
     kickOffDisplay();
 }
@@ -150,20 +122,12 @@ function changeRadar(rtype) {
 }
 
 function radarClick() {
-    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
-    //document.getElementsByName("radar_product").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
-    // now remove class btn-default from new selected button and add btn-clicked
-    //this.classList.remove('btn-default');
-    //this.classList.add('btn-clicked');
+    // handler for all radar type buttons
     changeRadar(this.value);
 }
 
 function locationClick() {
-    // we don't know the previous select, so remove class btn-clicked from all, e.g., unselect all buttons
-    //document.getElementsByName("location").forEach((button) => {button.classList.remove('btn-clicked'); button.classList.add('btn-default');});
-    // now remove class btn-default from new selected button and add btn-clicked
-    //this.classList.remove('btn-default');
-    //this.classList.add('btn-clicked');
+    // handler for all location select buttons
     changeLocation(this.value);
 }
 
@@ -201,20 +165,19 @@ function nextPanel() {
 
 // Handle daily_fcst button
 function dailyFcst() {
-    // retrieve parameters and issue GET request
+    // retrieve parameters and issue GET request to Flask server
     var form = document.getElementById('params');
     var formData = new FormData(form);
     // next shows how to read formData, but we don't actually need it
     for (var pair of formData.entries()) {
         //console.log(pair[0]+' : '+pair[1]);
     }
-    //'http://localhost:5000/daily'
     form.action = 'http://localhost:5000/daily';
     form.submit();
 }
 
 function currentWx() {
-    // retrieve parameters and issue GET request
+    // retrieve parameters and issue GET request to Flask server
     var form = document.getElementById('params');
     form.action = 'http://localhost:5000/now';
     form.submit();
@@ -244,10 +207,10 @@ class HomeLocation {
     constructor(name, lon_lat, radar_sta, time_zone, tz_off, zoom) {
         this.name = name;   // use name to display a button in the UI
         this.lon_lat = lon_lat; // display a marker at the home
-        this.radar_sta = radar_sta;
+        this.radar_sta = radar_sta; // nearest radar station
         this.loc3857 = transform(this.lon_lat, 'EPSG:4326', 'EPSG:3857');
-        this.time_zone = time_zone; // at the home location
-        this.tz_off = tz_off;
+        this.time_zone = time_zone; // TZ name at the home location
+        this.tz_off = tz_off;   // TZ offset in hours from UTC
         this.zoom = zoom;   // preferred map zoom for this location
     }
     getHomeName() { return this.name; }
@@ -279,16 +242,18 @@ class HomeLocation {
 
 // Location buttons are created from this Array and ordered on screen from 0 to N
 var locations = new Array();
+var conusLoc = new HomeLocation('US', [-100.1,40.1], 'conus', "America/Los_Angeles", -8, 4);
 var homeDover = new HomeLocation('Dover', [-121.97259,36.99283], 'kmux', "America/Los_Angeles", -8, 7);
 var homeLolita = new HomeLocation('Sue', [-75.85384,42.16405], 'kbgm', "America/New_York", -5, 7);
 var homeBobSeattle = new HomeLocation('Bob', [-122.03546,47.55889], 'katx', "America/Los_Angeles", -8, 7);
+var homeFranziKearney = new HomeLocation('Franzi', [-99.0684,40.70204], 'klnx', "America/Chicago", -6, 7);
 var portlandLoc = new HomeLocation('Portland', [-122.68334,45.51689], 'krtx', "America/Los_Angeles", -8, 7);
-var conusLoc = new HomeLocation('US', [-100.1,40.1], 'conus', "America/Los_Angeles", -8, 4);
 locations.push(conusLoc);
 locations.push(homeDover);
 locations.push(homeLolita);
 locations.push(homeBobSeattle);
 locations.push(portlandLoc);
+locations.push(homeFranziKearney);
 var currentLocation = null; // will be set when changeLocation is called
 
 // get value of a GET request parameter
@@ -325,14 +290,12 @@ function changeLocation(idx) {
     });
     
     var loc = locations[idx];
-    //loc = conusLoc;
     storeLoc(loc);
     currentLocation = loc;
-    //radarSite = loc.getRadarStation();
     radarSite = 'conus';
     radarProd = radarSite+'_'+radarProduct;
     iconLayer = loc.getMarkerLayer();
-    getCapabilities();
+    getCapabilities();  // TODO: maybe not necessary?
 }
 
 function killAllTimers() {
@@ -348,7 +311,7 @@ function killAllTimers() {
 
 // Process WmsCapabilities obtained from WMS request.
 // It sets some global vars.
-// return allTimesArr: all of the times that past images are available (usually 2 to 4 hours every 10 minutes)
+// return allTimesArr: all of the times that past images are available (usually 2 to 4 hours every 2 minutes for CONUS or 10 minutes for individual radar)
 // NOTE: more friendly syntax than using XML
 function processWmsCapabilities(wmsCap) {
 	// Create 'result' object corresponding to XML returned from GetCapabilities
@@ -365,8 +328,6 @@ function processWmsCapabilities(wmsCap) {
 	console.log('Abstract: '+layer.Abstract);
 
 	// Get Dimension (containing default time, and array of time values)
-    // TODO: should not use Dimension[0], instead get Dimension name=time?
-	//var timeDimension = layer.Dimension[0];
 	var timeDimension = layer.Dimension.find( Dimension => {return Dimension.name === 'time' } );
 	if (!timeDimension) throw new Error('Dimension not found');
 
@@ -376,7 +337,7 @@ function processWmsCapabilities(wmsCap) {
 	defaultTime = new Date(defaultTimeStr);
 	//console.log('default time (XML string) = '+defaultTimeStr+', defaultTime (converted to Date) = '+defaultTime.toISOString());
 
-	// Create array of Date values corresponding to GetCapabilities array of times, removing any older than our interest
+	// Create array of Date values corresponding to GetCapabilities array of times
 	// All available times are in an array of strings, oldest first, newest last
 	var allTimesStr = timeDimension.values.split(',');	// Convert string to array of (time) strings
 	//console.log('allTimesStr.length = '+allTimesStr.length);
@@ -387,13 +348,14 @@ function processWmsCapabilities(wmsCap) {
     }
 	//console.log('allTimesArr.length = '+allTimesArr.length);
 
-	// Get map bounding box from the WMSCapabilities
+	// Get map bounding box from the WMSCapabilities, mapCRS=='EPSG:4326'
+    // 4326 designates latitude as X, longitude as Y
 	var boundingBox = layer.BoundingBox.find( BoundingBox => { return BoundingBox.crs === mapCRS } );
 	if (!boundingBox) throw new Error('Layer bounding box not found for CRS = '+mapCRS);
 	var mapbbox = boundingBox.extent;
 	//console.log('bbox.extent = '+mapbbox.toString());
     // bbox4326 is used in startupDisplay to center the map
-    bbox4326 = new Array(mapbbox[1],mapbbox[0],mapbbox[3],mapbbox[2]);
+    bbox4326 = new Array(mapbbox[1],mapbbox[0],mapbbox[3],mapbbox[2]);  // swap lat/lon
 
 	// Calculate center for map
 	if (latitudeCenter) var mapCenterLatitude = latitudeCenter;
@@ -406,14 +368,52 @@ function processWmsCapabilities(wmsCap) {
     return allTimesArr;
 }
 
+function filterTimes(timeArr, timeLenMinute, timeInterval) {
+    // return Array of times for animation display
+    // timeArr - input, Array of Date objects, returned from WMSCapabilities
+    // timeLenMinute - number of minutes in past for animation
+    // timeInterval - spacing between animation frames in minutes
+    var earliest = nMinutesAgo(timeLenMinute);  // Date object
+    var timeIntMS = timeInterval * 60 * 1000;
+    //console.log('earliest = '+earliest.toISOString());
+    var dtArr = new Array();
+    var dtRet = new Array();
+    
+    for (var i=0; i < timeArr.length; i++) {
+        // keep only "recent" times
+        if (timeArr[i] > earliest) dtArr.push(timeArr[i]);
+    }
+    if (timeIntMS > 0) {
+        // skip times if interval is too short
+        var t0, t1;
+        // most recent time is last in array. We want to keep most recent.
+        t1 = dtArr[dtArr.length-1];
+        dtRet.push(t1);
+        for (var i=dtArr.length-2; i >= 0; i--) {
+            t0 = dtArr[i];
+            if ((t1 - t0) > timeIntMS) {
+                dtRet.push(t0); // keep if more than timeInMS since last
+                t1 = t0;
+            }
+        }
+        dtRet.reverse();    // oldest should be first in array
+    }
+    else {
+        dtRet = allTimes;
+    }
+    return dtRet;
+}
+
+// Fetch WmsCapabilities with AJAX. Handle the AJAX status returns here.
+// TODO: should use modern fetch!
 function ajaxStateChange() {
-    var ok = true;
+    var ok = true;  // assume we succeed
     console.log('getCapabilities readyState = '+this.readyState);
     if (this.readyState != 4) {
         return;
     }
     else if (this.status == 200) {
-        lastGetCapTime = new Date().getTime();
+        lastGetCapTime = new Date().getTime();  // keep track of most recent successful fetch
         //console.log('getCapabilities length = '+this.responseText.length);
         // wmsCap is a string representing XML. Convert to object.
         var wmsCap = this.responseText;
@@ -421,12 +421,7 @@ function ajaxStateChange() {
             var dtArr = processWmsCapabilities(wmsCap); // returns Array of radar image times
             //console.log('dtArr.length='+dtArr.length);
             // remove old times from array. dtArr may go back 4 hours, but we usually only want 1 hour.
-            var earliest = nHoursAgo(animationMaxHours);
-            //console.log('earliest = '+earliest.toISOString());
-            allTimes = new Array();
-            for (var i=0; i < dtArr.length; i++) {
-                if (dtArr[i] > earliest) allTimes.push(dtArr[i]);
-            }
+            allTimes = filterTimes(dtArr, animationMaxMins, animationFrameInterval);
             console.log('allTimes.length='+allTimes.length+', defaultTime='+defaultTime.toISOString());
             startupDisplay(autoPlay);   // fill in the page contents
         }
@@ -581,6 +576,11 @@ function nHoursAgo(nHour) {
 	return new Date(Date.now() - milli);	// 3600000 milliseconds in an hour
 }
 
+function nMinutesAgo(nMinute) {
+    var milli = Math.round(1000 * 60 * nMinute);    // nMinute can be float
+	return new Date(Date.now() - milli);
+}
+
 // Function to stop animation
 function stop() {
     //console.log('button: stop');
@@ -610,6 +610,9 @@ function stopLatest() {
     }
 }
 
+// Displays the time diff between now and most recent image.
+// If this time is longer than "refreshMinutes", there may be a problem,
+// and we should run getCapabilities again.
 function image_timer() {
     if (defaultTime) {
         var elem = document.getElementById('img_timer');
@@ -656,7 +659,7 @@ function kickOffDisplay() {
     // changeLocation forces getCapabilities to run and that will update entire page.
     changeLocation(home_idx);  // always start with location 0, assumed to be your home
     var radar_type = get_req('radar_type');
-    if (radar_type === undefined) radar_type = 'bref_raw';
+    if (radar_type === undefined) radar_type = 'bref_qcd';
     changeRadar(radar_type);
     
     // Do not ever kill image_timer, because it also functions as a watchdog
